@@ -1,4 +1,4 @@
-Processing of doppler-radar returns for object detection and speed measurement.
+## Doppler Radar object detection and speed measurement
 
 This project uses cheap (< $10) doppler radar modules from various online vendors, such as the HB100 at 10.525 GHz or the smaller CDM324 at 24 GHz. These modules are low power, short range, and intended for automatic door openers and similar purposes. They generate a weak (microphone-level) audio signal output. They can detect cars to 100+ feet and people to 30+ feet. A simple aluminum-foil horn antenna reduces sensitivity towards the side and back, and extends this range somewhat.
 
