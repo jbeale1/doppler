@@ -10,7 +10,7 @@ You can run the weak doppler output signal through a preamp (eg. opamp OPA209A, 
 
 For example, if the radar sensor sits by the side of the road looking to the right, and a car approaches from the right and then passes, at first the car's motion is almost directly towards the sensor (radial velocity ~ total velocity) but then radial velocity drops to zero at the moment it draws even with the sensor and passes by. After that its radial velocity goes negative as it receeds, but meanwhile it has also passed behind the sensor and out of the radar antenna pattern, so the signal fades out at some point before reaching a frequency of 0 (not to mention the preamp is AC-coupled). On a two-lane road, signals from oncoming traffic in the far lane fade into the noise sooner than with-traffic in the near lane, since cars in the far lane remain farther away as they pass.
 
-![CarDopplerSignal](https://github.com/jbeale1/doppler/blob/master/DopplerSignals.jpg)
+![CarDopplerSignal](https://github.com/jbeale1/doppler/blob/master/DopplerSignal1.jpg)
 
 These cheap radar sensors do not have an I+Q output but just a magnitude output, so you cannot directly tell apart approaching and receeding velocity. However if the sensor is pointed along the road, cars passing by towards the right and left will generate an "L" shaped curve in the spectrum with the horizontal part pointing right and left respectively, as they pass the sensor either at the start or the end of the time they are inside the sensor's field of view (see illustration above). In this way you can still tell the car's direction.  This assumes the car's speed is roughly constant; it can be harder to tell if a car slows down and stops while inside the field of view.  
 
