@@ -10,6 +10,9 @@ import cv2
 import numpy as np
 # import matplotlib.pyplot as plt
 
+pixelsPerFile = 3000       # 10 pixels per second
+secondsPerFile = 5.0 * 60  # each file = 5 minutes
+
 # -----------------------
 # scan through 1D array, find index & length of contiguous non-zero elements
 def findObj(suba):
@@ -48,16 +51,21 @@ def findObj(suba):
     offset = offset + imax + imin  # index of new 'suba' in original
 
 # -------------------------------------------
-# process one image for objects
+# scan one image for objects
+# return count of events found, and total # of x pixels within events
 def doOneImg(src_path):
   print(src_path, end=" : ")
   img1 = cv2.imread(src_path, 0) # 0 imports a grayscale
+  xsize = 0                # total x pixels in events so far
   nzcols = np.amax(img1,0) # maximum value in each column
-  olist = findObj(nzcols)  # find position & size of found objects
-  if (len(olist) > 0):
+  olist = findObj(nzcols)  # find position & size (x-pixelcount) of objects
+  eCount = len(olist)      # number of events found
+  if (eCount > 0):
     for x in olist:
       print("%d,%d " % (x[0],x[1]), end="")
+      xsize += x[1]    # count total x pixels in all events
   print()
+  return (eCount, xsize)
 
 #--------------------------------------------------
 # main program starts here
@@ -71,21 +79,26 @@ src_dir = sys.argv[1]  # input file is 1st argument on command line
 
 directory = os.fsencode(src_dir)
 
-procCount = 0  # how many files processed so far
+fCount = 0  # how many files processed so far
+totalEvents = 0            # count of all events so far
+totalXPixels = 0           # all x pixels in events so far
+
 for file in sorted(os.listdir(directory)):
      filename = os.fsdecode(file)
      if filename.endswith(".png") and filename.startswith("Det_"):
          # print(filename)
-         doOneImg(filename)
-         procCount += 1
+         (tE, tX ) = doOneImg(filename)
+         totalEvents += tE  # total events seen
+         totalXPixels += tX # total x pixels in all events
+         fCount += 1
          continue
      else:
          continue
 
-print("Total files: %d" % (procCount))
+avgXPixels = (1.0 * totalXPixels) / totalEvents
+hours = (fCount * secondsPerFile) / (60.0*60.0)
+print("Files: %d Hours: %5.3f Events: %d Events/Hr: %5.3f Avg.Seconds: %5.3f" %
+   (fCount, hours, totalEvents, totalEvents/hours, avgXPixels/10))
 raise SystemExit  # DEBUG quit here
 
 # -------------------------------------------
-# print("Done with %s" % src_path)
-
-# print(nzcols)
