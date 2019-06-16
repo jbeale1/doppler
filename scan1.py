@@ -71,13 +71,23 @@ def findObj(suba):
 # scan one image for objects
 # return count of events found, and total # of x pixels within events
 # and 1 column of pixels averaged all rows, of background (non-event columns)
+# and noise blip count
+
 def doOneImg(src_path):
+# sox $f -n rate 8k spectrogram -Z -40 -z 28 -x 3000 -y 257 -m -r
+# 256 => 8/2 or 4 kHz, 71.5667 Hz/mph => 55.89 mph
+  Vscale = 55.89  # mph at full-scale (top pixel row of spectrogram)
+  durThresh = 15  # at least 15 pixels (1.5 seconds) for object to be "real"
+  blips = 0
+  eSum = np.zeros((1,1))  # 1-elem matrix
+
   margin = 10    # buffer pixels after detected object to include in region
-  print(src_path, end=" : ")
+  # print(src_path, end=" : ")
   raw_path = src_path[4:] # remove first 4 chars
   img1 = cv2.imread(src_path, 0) # detected image 0 imports a grayscale
   raw_img = cv2.imread(raw_path, 0) # original raw doppler spectrogram
-
+  ysize = np.size(img1, 0)
+  # print("ysize = %d" % ysize) # DEBUG  eg. 257 (256+1)
   xTotal = 0                # total x pixels in events so far
   nzcols = np.amax(img1,0) # maximum value in each column
   olist = findObj(nzcols)  # list with position & size (x-pixelcount) of objects
@@ -88,8 +98,46 @@ def doOneImg(src_path):
       for x in olist:
         xpos = x[0]  # starting index of this object
         xsize = x[1] # x pixels included in this object
-        print("%d,%d " % (xpos, xsize), end="")
+        # print("%d,%d " % (xpos, xsize), end="")
         xpos2 = min(xpos+xsize+margin,nzcols.size-1) # end index of region
+        dEvent = img1[:, xpos:xpos+xsize] # crop of this event in 0,255 mask
+        dE_vb = cv2.blur(dEvent,(1,31))  # vertical blur to find near-verticals
+        dE_hb = cv2.blur(dEvent,(31,1))  # horizontal blur to find speed
+        thresh = 128 # thresholding at 50% seems to work ok
+        # separate out horizontal and vertical features
+        ret,dEv_th = cv2.threshold(dE_vb,thresh,255,cv2.THRESH_BINARY)
+        ret,dEh_th = cv2.threshold(dE_hb,thresh,255,cv2.THRESH_BINARY)
+
+        dEh_1d = np.sum(dEh_th, axis=0) # sum over vertical axis
+        # print(np.shape(dEh_th), dEh_1d)  # 1D summary of horizontal part
+        dEh_size = np.count_nonzero(dEh_1d) # horizontal size of hor.component
+        if (dEh_size < durThresh):
+            blips += 1
+            continue  # skip processing if event was too short
+        Mv = cv2.moments(dEv_th)  # find moments of mostly-vertical object
+        Mh = cv2.moments(dEh_th)  # find moments of mostly-horizontal object
+        Mv0 = Mv["m00"]
+        Mh0 = Mh["m00"]
+        # only if both V,H features actually exist, and not a short blip
+        if (Mv0 > 0) and (Mh0 > 0):
+          cXv = int(Mv["m10"] / Mv0)
+          cYv = int(Mv["m01"] / Mv0)
+          # only valid to find direction if this is single, not overlapping events
+          dfrac = cXv/xsize # <0.5 overtaking(to right), >.5 oncoming (to left)
+
+          cXh = int(Mh["m10"] / Mh0)
+          cYh = int(Mh["m01"] / Mh0)
+
+          vel = (Vscale * (ysize-cYh)-1)/ysize # zero velocity is within range
+          ePath = "E_" + raw_path[:-4] + "_" + str(xpos) + ".png"
+          if (dfrac > 0.5):
+               dir="L"  # heading left (oncoming)
+          else:
+               dir="R"  # heading right (overtaking)
+          # print("(%d,%d) dir:%s V:%3.1f %s" % (cXv,cYv,dir,vel,ePath))
+          print("%04.1f mph, %s (%d): %s" % (vel,dir,dEh_size,ePath))
+          cv2.imwrite(ePath,cv2.add(dEv_th,dEh_th))  # save image to disk
+
         if (xTotal == 0):  # for the very first region
           eSum = raw_img[:, xstart:xpos] # empty area before event
           rSum = raw_img[:, xpos:xpos2] # 1st event (raw img)
@@ -102,13 +150,16 @@ def doOneImg(src_path):
           rSum1 = np.concatenate((rSum1, img1[:,xpos:xpos2]), axis=1) # combine events
         xstart = xpos2 # advance area of interest past current one
         xTotal += x[1]    # count total x pixels in all events
-      eregion = raw_img[:, xstart:] # include remaining unused pixels, if any
-      eSum = np.concatenate((eSum, eregion), axis=1) # all non-event area
-      eAvg = np.mean(eSum, axis=1) # avg of each row across non-event bkgnd
+      if (eSum.size != 1):
+        eregion = raw_img[:, xstart:] # include remaining unused pixels, if any
+        eSum = np.concatenate((eSum, eregion), axis=1) # all non-event area
+        eAvg = np.mean(eSum, axis=1) # avg of each row across non-event bkgnd
+      else:
+        eAvg = np.mean(raw_img, axis=1) # if no events, everything is bkgnd
   else:
       eAvg = np.mean(raw_img, axis=1) # if no events, everything is bkgnd
 
-  print()
+  # print()
   # print(eAvg.astype(int))  # DEBUG print out background average column
 
   ShowImage = False   # whether to show events from each image
@@ -125,7 +176,7 @@ def doOneImg(src_path):
       cv2.imshow('foreground',fg)  # DEBUG display regions with events
       #cv2.imshow('non-event',eSum)  # DEBUG display regions without events
       cv2.waitKey(0)
-  return (eCount, xTotal, np.asarray(eAvg, dtype="uint8"))
+  return (eCount, xTotal, np.asarray(eAvg, dtype="uint8"), blips)
 
 #--------------------------------------------------
 # main program starts here
@@ -142,23 +193,25 @@ directory = os.fsencode(src_dir)
 fCount = 0  # how many files processed so far
 totalEvents = 0            # count of all events so far
 totalXPixels = 0           # all x pixels in events so far
+blipSum = 0                # all noise blips so far
 
 firstImg = True
 for file in sorted(os.listdir(directory)):
      filename = os.fsdecode(file)
      if filename.endswith(".png") and filename.startswith("Det_"):
          # print(filename)
-         (tE, tX, bS ) = doOneImg(filename)
+         (tE, tX, bS, blips ) = doOneImg(filename)
          if (firstImg):
-             bSum = bS
+             bSum = bS  # background
              firstImg = False
              cSize = bS.size  # how may elements in this 1D array?
          else:
-             bSum = np.append(bSum, bS)
              # generate averaged bkgnd vs.time
+             bSum = np.append(bSum, bS)
 
          totalEvents += tE  # total events seen
          totalXPixels += tX # total x pixels in all events
+         blipSum += blips
          fCount += 1
          continue
      else:
@@ -166,25 +219,26 @@ for file in sorted(os.listdir(directory)):
 
 avgXPixels = (1.0 * totalXPixels) / totalEvents
 hours = (fCount * secondsPerFile) / (60.0*60.0)
-print("Files:%d Hours:%5.3f Events:%d Events/Hr:%5.3f Avg.Seconds:%5.3f" %
-   (fCount, hours, totalEvents, totalEvents/hours, avgXPixels/10))
+print(" --------------- ")
+print("Files:%d Hours:%5.3f Events:%d Ev/Hr:%5.3f Avg.Secs:%5.3f Blips:%d" %
+   (fCount, hours, totalEvents, totalEvents/hours, avgXPixels/10, blipSum))
 
 np.set_printoptions(precision=1, suppress=True)
 bImg = np.transpose(bSum.reshape(fCount, cSize))
 (ys, xs) = bImg.shape
-print(xs, ys, bImg.dtype)
+# print(xs, ys, bImg.dtype)
 bkAvg = np.mean(bImg, axis=1)
 
 # print(bkAvg)
 print()
 diff = bkAvg - bk257
-print(diff)  # difference in background of this set of files from preset
+# print(diff)  # difference in background of this set of files from preset
 print("Min:Max of diff: %3.1f %3.1f" % (diff.min(), diff.max()) )
-cv2.imwrite("avgBackground.png",bImg)  # save image to disk
-cv2.imshow('Background vs. Time',bImg)  # background vs time
-cv2.waitKey(0)
+if ( False ):
+  cv2.imwrite("avgBackground.png",bImg)  # save image to disk
+  cv2.imshow('Background vs. Time',bImg)  # background vs time
+  cv2.waitKey(0)
 
 
 raise SystemExit  # DEBUG quit here
-
 # -------------------------------------------
