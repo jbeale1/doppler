@@ -12,7 +12,7 @@ import numpy as np
 
 # averaged background level of doppler spectrogram
 bk257 = np.array(
-[ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 4, 8, 2,14,16,17,17,18,18,18,18,
+[ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 4, 8,12,14,16,17,17,18,18,18,18,
  18,18,18,19,19,19,19,19,19,19,19,19,20,20,20,20,20,20,20,20,21,21,21,21,
  21,21,21,21,21,22,22,22,22,22,22,22,22,22,23,23,23,23,23,23,23,24,24,24,
  24,24,24,24,24,25,25,25,25,25,25,25,25,26,26,26,26,26,26,26,27,27,27,27,
@@ -28,6 +28,10 @@ bkcol = np.asarray(bk257, dtype="uint8")  # background level, one column
 
 pixelsPerFile = 3000       # 10 pixels per second
 secondsPerFile = 5.0 * 60  # each file = 5 minutes
+
+velMax = 0        # highest detected event speed
+velMaxName = ""   # max speed description
+
 
 # -----------------------
 # scan through 1D array, find index & length of contiguous non-zero elements
@@ -76,6 +80,10 @@ def findObj(suba):
 def doOneImg(src_path):
 # sox $f -n rate 8k spectrogram -Z -40 -z 28 -x 3000 -y 257 -m -r
 # 256 => 8/2 or 4 kHz, 71.5667 Hz/mph => 55.89 mph
+
+  global velMax            # highest detected event speed
+  global velMaxName        # max speed description
+
   Vscale = 55.89  # mph at full-scale (top pixel row of spectrogram)
   durThresh = 15  # at least 15 pixels (1.5 seconds) for object to be "real"
   blips = 0
@@ -131,12 +139,15 @@ def doOneImg(src_path):
           vel = (Vscale * (ysize-cYh)-1)/ysize # zero velocity is within range
           ePath = "E_" + raw_path[:-4] + "_" + str(xpos) + ".png"
           if (dfrac > 0.5):
-               dir="L"  # heading left (oncoming)
+               dir=0  # 0=L: heading left (oncoming)
           else:
-               dir="R"  # heading right (overtaking)
+               dir=1  # 1=R: heading right (overtaking)
           # print("(%d,%d) dir:%s V:%3.1f %s" % (cXv,cYv,dir,vel,ePath))
-          print("%04.1f mph, %s (%d): %s" % (vel,dir,dEh_size,ePath))
-          cv2.imwrite(ePath,cv2.add(dEv_th,dEh_th))  # save image to disk
+          print("%04.1f, %d, %d, %s" % (vel,dir,dEh_size,ePath))
+          if (vel > velMax):
+              velMax = vel        # remember highest speed
+              velMaxName = ePath
+          # cv2.imwrite(ePath,cv2.add(dEv_th,dEh_th))  # save image to disk
 
         if (xTotal == 0):  # for the very first region
           eSum = raw_img[:, xstart:xpos] # empty area before event
@@ -181,6 +192,7 @@ def doOneImg(src_path):
 #--------------------------------------------------
 # main program starts here
 
+
 arguments = len(sys.argv) - 1
 if (arguments < 1):
   print ("Usage: %s directory" % (sys.argv[0]))
@@ -219,10 +231,10 @@ for file in sorted(os.listdir(directory)):
 
 avgXPixels = (1.0 * totalXPixels) / totalEvents
 hours = (fCount * secondsPerFile) / (60.0*60.0)
-print(" --------------- ")
-print("Files:%d Hours:%5.3f Events:%d Ev/Hr:%5.3f Avg.Secs:%5.3f Blips:%d" %
+print("#  --------------- ")
+print("# Files:%d Hours:%5.3f Events:%d Ev/Hr:%5.3f Avg.Secs:%5.3f Blips:%d" %
    (fCount, hours, totalEvents, totalEvents/hours, avgXPixels/10, blipSum))
-
+print("# Max speed: %5.1f mph : %s" % (velMax, velMaxName))
 np.set_printoptions(precision=1, suppress=True)
 bImg = np.transpose(bSum.reshape(fCount, cSize))
 (ys, xs) = bImg.shape
@@ -230,10 +242,9 @@ bImg = np.transpose(bSum.reshape(fCount, cSize))
 bkAvg = np.mean(bImg, axis=1)
 
 # print(bkAvg)
-print()
 diff = bkAvg - bk257
 # print(diff)  # difference in background of this set of files from preset
-print("Min:Max of diff: %3.1f %3.1f" % (diff.min(), diff.max()) )
+print("# (Min,Max) of diff: (%3.1f,%3.1f)" % (diff.min(), diff.max()) )
 if ( False ):
   cv2.imwrite("avgBackground.png",bImg)  # save image to disk
   cv2.imshow('Background vs. Time',bImg)  # background vs time
