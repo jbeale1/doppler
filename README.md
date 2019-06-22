@@ -16,4 +16,8 @@ These cheap radar sensors do not have an I+Q output but just a magnitude output,
 
 ![SlowerThenFaster](https://github.com/jbeale1/doppler/blob/master/D_SlowFast.jpg)
 
+If you had two sensors positioned back-to-back on the side of the road, so one was looking to the right and the other to the left, it would be easier to separate a change in speed from a change in heading angle. First one sensor would detect an approaching car until it passed by, and then the other sensor would see it receeding. Below is an illustration of this, where the two sensor outputs are color-coded and combined into one image. The true velocity of the car should be a smooth curve that sits on top of the red and green curves.
+
+![TwoSensors](https://github.com/jbeale1/doppler/blob/master/TwoSensors_1.jpg)
+
 Walkers or joggers generate a distictive wavy pattern (FM signal) in the spectrogram from the ~2 Hz motion of their arms and legs, and of course they move much slower than cars. As cars pass nearby the sensor, reflections from different parts of the rotating wheels generate some velocity spread. The top of the wheel is moving 2X the car speed, while the bottom of the wheel is momentarily near 0 speed. All such effects depend on reflectivity of the various parts so it is less visible on wheel hubs with a smoother profile.  If a vehicle is very close to the sensor while another one passes, you may get a signal from more than one angle at once, as part of the radar energy ping-pongs off one surface and then another.
