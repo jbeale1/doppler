@@ -16,7 +16,7 @@ These cheap radar sensors do not have an I+Q output but just a magnitude output,
 
 ![SlowerThenFaster](https://github.com/jbeale1/doppler/blob/master/D_SlowFast.jpg)
 
-If you had two sensors positioned back-to-back on the side of the road, so one was looking to the right and the other to the left, it would be easier to separate a change in speed from a change in heading angle. First one sensor would detect an approaching car until it passed by, and then the other sensor would see it receeding. Below is an illustration of this, where the two sensor outputs are color-coded and combined into one image. The true velocity of the car should be a smooth curve that sits on top of the red and green curves.
+If you had two sensors positioned back-to-back on the side of the road, so one was looking to the right and the other to the left, it would be easier to separate a change in speed from a change in heading angle. First one sensor would detect an approaching car until it passed by, and then the other sensor would see it receeding. Below is an illustration of this, where the two sensor outputs are color-coded and combined into one image. The true velocity of the car is mostly likely a smooth curve that bridges above the gap between the red and green curves.
 
 ![TwoSensors](https://github.com/jbeale1/doppler/blob/master/TwoSensors_1.jpg)
 
