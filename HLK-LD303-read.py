@@ -10,7 +10,8 @@ import datetime
 with serial.Serial('/dev/ttyUSB0', 115200, timeout=0.1) as ser:
     while True:
         dat = ser.read(26)        # read up to 26 bytes (timeout)
-        if (len(dat)>10 and dat[0] == 0x55 and dat[1] == 0xa5 and dat[2] == 0x0a and dat[3] == 0xd3):
+        bcount = len(dat)         # how many did we actually read
+        if (bcount == 13 and dat[0] == 0x55 and dat[1] == 0xa5 and dat[2] == 0x0a and dat[3] == 0xd3):
             cm = 256*dat[4] + dat[5] # 2-byte distance in cm  (dat[6] always 0)
             target = dat[7]            # target present, 1=yes
             signal = 256*dat[8] + dat[9]  # 2-byte signal strength
