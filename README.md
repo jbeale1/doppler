@@ -25,3 +25,7 @@ Walkers or joggers generate a distictive wavy pattern (FM signal) in the spectro
 Given that the green signal is from the left-pointing sensor, you can see below a person walking left to right at a steady pace (here, 4 mph). Later by a truck passes by going the same way. The truck speeds up slightly to 19 mph, then slows down quickly as it departs to the right.  There is a spike in the pedestrian signal just as he passes by. He was holding a cellphone in his hand and this may have been a momentary glint reflecting off the flat metal case.
 
 ![Walk-Truck](https://github.com/jbeale1/doppler/blob/master/D_Walk-Truck.jpg)
+
+If you have a sensor with both I/Q outputs (quadrature) you can directly detect the difference between motion toward and away from the sensor. This plot shows a spectrogram including negative frequencies, of the complex I/Q signal from a YH-24G01 24GHz module. This is me walking about 11 meters away and then back. I was careful to walk centered on-axis along the relatively tight antenna pattern of this module.
+
+![Walk-IQ](https://github.com/jbeale1/doppler/blob/master/IQ-Walk.jpg)
