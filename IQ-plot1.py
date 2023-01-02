@@ -1,7 +1,7 @@
 """
 Plot Radar I/Q data on spectrogram
 Python3 code with scipy, numpy, matplotlib
-J.Beale, Dec 27 2022
+J.Beale, Jan.1 2023
 """
 
 import numpy as np
@@ -13,24 +13,27 @@ import datetime # to show today's date
 
 # stereo wav file is Nx2 array of signed INT16
 
-fname_in="C:/Users/beale/Documents/Audio/ChD_2022-12-30_18-50-47-section.wav"
+fdir = "C:/Users/beale/Documents/Audio/"
+
+fname1 = "DpD_2023-01-01_16-25-00.wav"
+fname_in= fdir + fname1
 
 fs, datraw = scipy.io.wavfile.read(fname_in)
 N,ch = datraw.shape
 xR = datraw[:,:].astype(np.float32) / 65535.0
 #xR = datraw[int(N*.75):,:].astype(np.float32) / 65535.0
-#xR = datraw[int(N*.2):int(N*.3),:].astype(np.float32) / 65535.0
+#xR = datraw[int(N*0.5):int(N*1.0),:].astype(np.float32) / 65535.0
 x = xR[:,0] + 1j * xR[:,1]  # make complex from 2 reals
 
 today = datetime.date.today()
 dstring = today.strftime('%Y-%b-%d')
 fig, ax =  plt.subplots(2)
-ax[0].set_title('YH-24G01 24GHz IQ doppler  (rain)    plotted %s' % dstring)
+ax[0].set_title('YH-24G01    %s    plot: %s' % (fname1,dstring))
 ax[0].set(xlabel='time (s)', ylabel='frequency (Hz)')
 ax[0].grid()
 #FFTsize=2048
 FFTsize=int(4096*1)
-fRange = 2500  # spectrogram displayed frequency range, in Hz
+fRange = 3000  # spectrogram displayed frequency range, in Hz
 Pxx, freqs, bins, im = ax[0].specgram(x, NFFT=FFTsize, Fs=fs, 
                                     noverlap=3000, scale='dB',
                                     cmap='magma')
@@ -39,8 +42,8 @@ plt.rc('figure', figsize=[46.82 * .5**(.5 * A), 33.11 * .5**(.5 * A)])
 ax[0].axis((None, None, -fRange, fRange))  # freq limits, Hz
 
 c=int(FFTsize/2) # center frequency (f=0)
-r=int(200*2)  # bins on either size of f=0
-lm = -115 # clamp signal below this level in dB
+r=int(250*2)  # bins on either size of f=0
+lm = -105 # clamp signal below this level in dB
 
 p1 = 20*np.log10(Pxx[c-r:c+r,:]) # units of dB
 p1f = np.flip(p1,0)  # flip array along 1st axis
