@@ -2,7 +2,7 @@
 
 # scan binary image to find columns with non-zero pixels
 # print start-index and length of each (non-zero) block of pixels
-# J.Beale 14-June-2019
+# J.Beale 14-June-2019 - 07-Jan-2022
 
 import os     # for file basename extraction
 import sys    # for command line arguments
@@ -12,17 +12,22 @@ import numpy as np
 
 # averaged background level of doppler spectrogram
 bk257 = np.array(
-[ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 4, 8,12,14,16,17,17,18,18,18,18,
- 18,18,18,19,19,19,19,19,19,19,19,19,20,20,20,20,20,20,20,20,21,21,21,21,
- 21,21,21,21,21,22,22,22,22,22,22,22,22,22,23,23,23,23,23,23,23,24,24,24,
- 24,24,24,24,24,25,25,25,25,25,25,25,25,26,26,26,26,26,26,26,27,27,27,27,
- 27,27,27,27,27,28,28,28,28,28,28,28,28,29,29,29,29,29,29,29,30,30,30,30,
- 30,30,30,30,31,31,31,31,32,31,31,31,32,32,32,32,32,32,32,33,33,33,33,33,
- 33,33,33,33,34,34,34,34,34,34,34,34,34,35,35,35,35,35,35,35,35,35,36,36,
- 36,36,36,36,36,36,36,37,37,37,37,37,37,37,37,37,37,37,37,38,37,38,38,38,
- 38,38,38,38,38,38,38,38,38,38,38,38,38,38,38,38,38,38,38,38,38,38,38,38,
- 38,38,38,38,38,37,37,37,37,37,36,36,36,35,35,34,34,33,33,32,31,30,29,27,
- 26,24,22,20,18,15,12, 9, 6, 3, 1, 0, 0, 0, 0, 0, 0] )
+ [0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  3,  7, 11, 13, 15,
+ 16, 16, 16, 16, 16, 17, 17, 17, 17, 17, 17, 17, 17, 18, 18, 18, 18, 18,
+ 19, 19, 19, 19, 19, 19, 19, 19, 20, 20, 20, 20, 20, 20, 20, 21, 21, 21,
+ 21, 21, 21, 21, 21, 22, 22, 22, 22, 22, 23, 22, 22, 23, 23, 23, 23, 23,
+ 23, 23, 24, 24, 24, 24, 24, 24, 25, 25, 25, 25, 25, 25, 26, 26, 26, 26,
+ 26, 26, 26, 27, 27, 27, 27, 27, 27, 27, 28, 27, 28, 28, 28, 28, 28, 28,
+ 29, 29, 29, 29, 29, 29, 29, 30, 30, 30, 30, 30, 31, 31, 31, 31, 31, 31,
+ 31, 32, 32, 32, 32, 32, 32, 32, 32, 33, 33, 33, 33, 33, 33, 33, 34, 34,
+ 34, 34, 34, 34, 35, 35, 35, 35, 35, 35, 35, 36, 36, 36, 36, 36, 36, 37,
+ 37, 37, 37, 37, 37, 37, 38, 38, 38, 37, 38, 38, 39, 39, 38, 38, 39, 39,
+ 39, 39, 39, 39, 39, 39, 39, 39, 40, 40, 40, 40, 40, 40, 40, 40, 40, 41,
+ 40, 40, 40, 41, 41, 41, 40, 41, 41, 41, 41, 41, 41, 41, 41, 41, 40, 41,
+ 41, 41, 41, 40, 40, 41, 40, 40, 40, 40, 40, 39, 39, 38, 38, 38, 37, 37,
+ 36, 35, 34, 33, 32, 31, 30, 28, 26, 24, 22, 19, 15, 12,  8,  5,  2,  0,
+  0,  0,  0,  0,  0 ])
+
 bkcol = np.asarray(bk257, dtype="uint8")  # background level, one column
 
 
@@ -35,6 +40,7 @@ velMaxName = ""   # max speed description
 
 # -----------------------
 # scan through 1D array, find index & length of contiguous non-zero elements
+# returns: list of objects
 def findObj(suba):
   objnum = 0
   offset = 0  # running sum from past object index offsets
@@ -76,8 +82,9 @@ def findObj(suba):
 # return count of events found, and total # of x pixels within events
 # and 1 column of pixels averaged all rows, of background (non-event columns)
 # and noise blip count
+# and pedestrian count
 
-def doOneImg(src_path):
+def doOneImg(src_path, f):
 # sox $f -n rate 8k spectrogram -Z -40 -z 28 -x 3000 -y 257 -m -r
 # 256 => 8/2 or 4 kHz, 71.5667 Hz/mph => 55.89 mph
 
@@ -87,6 +94,12 @@ def doOneImg(src_path):
   Vscale = 55.89  # mph at full-scale (top pixel row of spectrogram)
   durThresh = 15  # at least 15 pixels (1.5 seconds) for object to be "real"
   blips = 0
+  pedVthresh = 5  # peds slower than this (mph)
+  pedTthresh = 30 # ped event longer than this (deci-seconds)
+  peds = 0        # pedestrian events: <5 mph and >3 sec duration
+  carVthresh = 5  # cars are at least this fast (mph)
+  carTthresh = 20 # cars last at least this long (deci-seconds)
+  cars = 0        # vehicle events: >5 mph at >2 sec duration
   eSum = np.zeros((1,1))  # 1-elem matrix
 
   margin = 10    # buffer pixels after detected object to include in region
@@ -94,6 +107,9 @@ def doOneImg(src_path):
   raw_path = src_path[4:] # remove first 4 chars
   img1 = cv2.imread(src_path, 0) # detected image 0 imports a grayscale
   raw_img = cv2.imread(raw_path, 0) # original raw doppler spectrogram
+  if ((img1 is None) or (raw_img is None)):
+    return (0,0, np.asarray(0, dtype="uint8"), blips, cars, peds)
+
   ysize = np.size(img1, 0)
   # print("ysize = %d" % ysize) # DEBUG  eg. 257 (256+1)
   xTotal = 0                # total x pixels in events so far
@@ -103,7 +119,7 @@ def doOneImg(src_path):
   if (eCount > 0):
       xstart = 0   # start of current area of interest
       # print(raw_path)
-      for x in olist:
+      for x in olist: # step through list of events
         xpos = x[0]  # starting index of this object
         xsize = x[1] # x pixels included in this object
         # print("%d,%d " % (xpos, xsize), end="")
@@ -142,8 +158,14 @@ def doOneImg(src_path):
                dir=0  # 0=L: heading left (oncoming)
           else:
                dir=1  # 1=R: heading right (overtaking)
+          if ((vel < pedVthresh) and (dEh_size > pedTthresh)):
+            peds += 1  # another pedestrian
+          if ((vel >= carVthresh) and (dEh_size > carTthresh)):
+            cars += 1  # another pedestrian
+
           # print("(%d,%d) dir:%s V:%3.1f %s" % (cXv,cYv,dir,vel,ePath))
-          print("%04.1f, %d, %d, %s" % (vel,dir,dEh_size,ePath))
+          #print("%04.1f, %d, %d, %s" % (vel,dir,dEh_size,ePath))
+          f.write("%04.1f, %d, %d, %s\n" % (vel,dir,dEh_size,ePath))
           if (vel > velMax):
               velMax = vel        # remember highest speed
               velMaxName = ePath
@@ -174,6 +196,8 @@ def doOneImg(src_path):
   # print(eAvg.astype(int))  # DEBUG print out background average column
 
   ShowImage = False   # whether to show events from each image
+  #ShowImage = True   # whether to show events from each image
+
   if (xTotal > 0) and ( ShowImage ):
       (y,x) = rSum.shape  # find dimensions of array
       # print("x:%d  y:%d" % (x,y))
@@ -187,32 +211,49 @@ def doOneImg(src_path):
       cv2.imshow('foreground',fg)  # DEBUG display regions with events
       #cv2.imshow('non-event',eSum)  # DEBUG display regions without events
       cv2.waitKey(0)
-  return (eCount, xTotal, np.asarray(eAvg, dtype="uint8"), blips)
+  return (eCount, xTotal, np.asarray(eAvg, dtype="uint8"), blips, cars, peds)
 
 #--------------------------------------------------
 # main program starts here
 
 
+
 arguments = len(sys.argv) - 1
 if (arguments < 1):
-  print ("Usage: %s directory" % (sys.argv[0]))
+  print ("Usage: %s directory [A|B]" % (sys.argv[0]))
   exit()
 
-src_dir = sys.argv[1]  # input file is 1st argument on command line
-
+src_dir = sys.argv[1]  # input directory is 1st argument on command line
 directory = os.fsencode(src_dir)
+
+fstart = "Det_DpA"
+# fstart = "Det_DpB"
+
+arg2 = sys.argv[2]
+if (arguments > 1):
+  slen = len(arg2)
+  # print("arg = %s String length = %d" % (arg2,slen))
+  if (slen == 1):
+    fstart = "Det_Dp" + arg2
+
+fname_out = "Log" + arg2 + ".csv"
+fout = open(fname_out, 'w')  # output data to csv file
+fout.write("mph, dir, decisec, fname\n") # csv column headers
 
 fCount = 0  # how many files processed so far
 totalEvents = 0            # count of all events so far
 totalXPixels = 0           # all x pixels in events so far
 blipSum = 0                # all noise blips so far
+carSum = 0		   # total # vehicles
+pedSum = 0                 # total # pedestrians
 
 firstImg = True
 for file in sorted(os.listdir(directory)):
      filename = os.fsdecode(file)
-     if filename.endswith(".png") and filename.startswith("Det_"):
+     if filename.endswith(".png") and filename.startswith(fstart):
          # print(filename)
-         (tE, tX, bS, blips ) = doOneImg(filename)
+         (tE, tX, bS, blips, cars, peds ) = doOneImg(filename, fout)
+         print("%d, %d, %s" % (cars, peds, filename))  # debug output
          if (firstImg):
              bSum = bS  # background
              firstImg = False
@@ -223,33 +264,42 @@ for file in sorted(os.listdir(directory)):
 
          totalEvents += tE  # total events seen
          totalXPixels += tX # total x pixels in all events
+         carSum += cars
+         pedSum += peds
          blipSum += blips
          fCount += 1
          continue
      else:
          continue
 
-avgXPixels = (1.0 * totalXPixels) / totalEvents
-hours = (fCount * secondsPerFile) / (60.0*60.0)
-print("#  --------------- ")
-print("# Files:%d Hours:%5.3f Events:%d Ev/Hr:%5.3f Avg.Secs:%5.3f Blips:%d" %
-   (fCount, hours, totalEvents, totalEvents/hours, avgXPixels/10, blipSum))
-print("# Max speed: %5.1f mph : %s" % (velMax, velMaxName))
-np.set_printoptions(precision=1, suppress=True)
-bImg = np.transpose(bSum.reshape(fCount, cSize))
-(ys, xs) = bImg.shape
-# print(xs, ys, bImg.dtype)
-bkAvg = np.mean(bImg, axis=1)
 
-# print(bkAvg)
-diff = bkAvg - bk257
-# print(diff)  # difference in background of this set of files from preset
-print("# (Min,Max) of diff: (%3.1f,%3.1f)" % (diff.min(), diff.max()) )
-if ( False ):
-  cv2.imwrite("avgBackground.png",bImg)  # save image to disk
-  cv2.imshow('Background vs. Time',bImg)  # background vs time
-  cv2.waitKey(0)
+print("Total events = %d" % totalEvents)
+if (totalEvents > 0):
+  avgXPixels = (1.0 * totalXPixels) / totalEvents
+  hours = (fCount * secondsPerFile) / (60.0*60.0)
+  print("#  --------------- ")
+  print("# Files:%d Hours:%5.3f Cars:%d Peds:%d Cars/Hr:%5.3f Avg.Secs:%5.3f Blips:%d" %
+     (fCount, hours, carSum, pedSum, carSum/hours, avgXPixels/10, blipSum))
+  print("# Max speed: %5.1f mph : %s" % (velMax, velMaxName))
+  np.set_printoptions(precision=1, suppress=True)
+  #bImg = np.transpose(bSum.reshape(fCount, cSize))
+  #(ys, xs) = bImg.shape
+  # print(xs, ys, bImg.dtype)
+  #bkAvg = np.mean(bImg, axis=1)
 
+  #p0 = np.add(np.full((257),0.49),bkAvg)
+  #p1 = np.asarray(p0, dtype="uint8")
+  #print(np.array2string(p1, separator=', '))
+  # print(bkAvg)
+  #diff = bkAvg - bk257
+  #print(diff)  # difference in background of this set of files from preset
+  #print("# (Min,Max) of diff: (%3.1f,%3.1f)" % (diff.min(), diff.max()) )
+  if ( False ):
+    cv2.imwrite("avgBackground.png",bImg)  # save image to disk
+    cv2.imshow('Background vs. Time',bImg)  # background vs time
+    cv2.waitKey(0)
+
+  fout.close()
 
 raise SystemExit  # DEBUG quit here
 # -------------------------------------------
