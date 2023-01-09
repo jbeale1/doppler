@@ -1,3 +1,5 @@
+#!/home/john/anaconda3/envs/cv/bin/python
+
 """
 Plot Radar I/Q data on spectrogram
 Python3 code with scipy, numpy, matplotlib
@@ -10,6 +12,7 @@ from scipy.io import wavfile
 import scipy.io
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+import pandas as pd  # dataframes for output
 
 import datetime # to show today's date
 import cv2  # OpenCV for processing detected events
@@ -21,9 +24,13 @@ from skimage.color import label2rgb
 
 # stereo wav file is Nx2 array of signed INT16
 
-fdir = "C:/Users/beale/Documents/Audio/"
+#fdir = "C:/Users/beale/Documents/Audio/"
+fdir = "./"
 
-fname1 = "DpD_2023-01-07_16-30-00.wav"  # 6.5 cars, 1 ped
+fname1 = "DpD_2023-01-09_10-35-00.wav" # 7 cars, 1 ped, rain
+#fname1 = "DpD_2023-01-09_08-00-00.wav" # 8 cars, 7 going left
+
+#fname1 = "DpD_2023-01-07_16-30-00.wav"  # 6.5 cars, 1 ped
 #fname1 = "DpD_2023-01-07_22-55-00.wav"   # 2 cars
 #fname1 = "DpD_2023-01-08_05-45-00.wav"  # only rain
 
@@ -65,7 +72,7 @@ ax[0].axis((None, None, -fRange, fRange))  # freq limits, Hz
 c=int(FFTsize/2) # center frequency (f=0)
 fRange=int(300*2)  # frequency bins on either size of f=0
 lm = -180 # clamp signal below this level in dB
-fMask = 30    # low-freq bin range to clamp 0
+fMask = 5    # low-freq bin range to clamp to 0
 
 # print("Pxx 0,0 value: ", Pxx[0,0], Pxx[4095,0])
 # max freq = fs/2 => +FFTsize in matrix
@@ -77,7 +84,7 @@ p1 = (Pxx[c-fRange:c+fRange,:]) # selected frequency region
 pMin = np.amin(p1)
 pMax = np.amax(p1)
 pRange = pMax - pMin
-p1[fRange-fMask:fRange+fMask,:]=pMin  # force low frequencies to minimum value
+p1[fRange-fMask:fRange+fMask,:]=pMin  # mask off low frequencies to minimum value
 
 p1 = (p1 - pMin) / pRange # normalize range to (0..1)
 #print("p1 Min = %5.3f  Max = %5.3f" % (pMin, pMax))
@@ -107,7 +114,7 @@ img = uint_img = np.array((p2-pMin)*255.0/pRange).astype('uint8')
 # print('Image Dimensions : ', img.shape) # (fbins 1200, timebins 6566)
 
 Vsize = 7  # vertical motion blur length
-Hsize = 3  # horiz. motion blur
+Hsize = 5  # horiz. motion blur
 kernel_motion_blur = np.zeros((Vsize, Vsize))
 kernel_Hmotion_blur = np.zeros((Hsize, Hsize))
 
@@ -128,7 +135,7 @@ image = imgB # size = (1200, 6567)  (freq x time)
 #thresh = threshold_otsu(image)
 #print("otsu threshold = %d" % thresh)
 #if (thresh < 25):  # reasonable minimum
-thresh = 25
+thresh = 22
 
 bw = morphology.closing(image > thresh, morphology.square(3))
 #cleared = clear_border(bw)  # clear artifacts at border
@@ -153,41 +160,68 @@ imgOut = image * (mask > 0)  # image with non-event background masked off
 (fTotal, colTotal) = image.shape  # dimensions of image
 tScaleFac = (N/fs)/colTotal       # convert image pixels to time (sec)
 eCount = 0
-print("n, mph, time, duration")
+#print("n, mph, time, duration")
+
+pd.options.display.float_format = '{:,.2f}'.format
+df = pd.DataFrame(columns = ['mph-max','mph-avg','mph-min', 'stdAvg', 'time', 'duration'])
+mphScale = (fs/FFTsize) * DopFreqScale  # to get units of mph
+
 for region in props1:
     if region.area >= 2000:  # draw a bounding rectangle
-        eCount += 1
         fCenter = region.centroid[0]                                  
         minr, minc, maxr, maxc = region.bbox
         imgS = imgOut[minr:maxr,minc:maxc] # image selected region
-        rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr,
-                                  fill=False, edgecolor='red', linewidth=1)
-        ax[1].add_patch(rect)
 
-        eDur = (maxc-minc) * tScaleFac
+        eDur = (maxc-minc) * tScaleFac  # units of seconds
         peaks = np.argmax(imgS, axis=0) # max along 1st axis
+        avgP = minr + np.average(peaks) # average of all values
+        pkSz = peaks.size  # number of elements in vector
+        pk1 = peaks[0:int(pkSz/3)]
+        pk2 = peaks[int(pkSz/3):2*int(pkSz/3)]
+        pk3 = peaks[2*int(pkSz/3):]
+        std1 = np.std(np.diff(pk1[0::2]))    # measure of stability of velocity
+        std2 = np.std(np.diff(pk2[0::2]))    # measure of stability of velocity
+        std3 = np.std(np.diff(pk3[0::2]))    # measure of stability of velocity
         #peakP = minr + np.amin(peaks) # index of highest frequency (if pos.)        
         # print(peaks.size, peaks)
         if (minr < fRange): # positive frequency half of plot
-          peakP = minr + np.amin(peaks) # index of highest frequency (if pos.)                  
+          maxP = minr + np.amin(peaks) # index of highest frequency (if pos.)                  
+          minP = minr + np.amax(peaks) # index of lowest frequency (if pos.)                  
+          eTime = maxc * tScaleFac  # time in seconds
+          stdAvg = (std1+std2)/2
         if (maxr > fRange): # negative frequency, bottom half of plot
-          peakP = minr + np.amax(peaks) # index of highest frequency (if neg.)                            
-        fPk = (fRange - peakP) * (fs/FFTsize)
-        mph = DopFreqScale * fPk
-        eTime = maxc * tScaleFac  # time in seconds
-        print("%d, %+06.2f, %5.1f, %5.1f" 
-                % (eCount, mph, eTime, eDur))
+          maxP = minr + np.amax(peaks) # index of highest frequency (if neg.)                            
+          minP = minr + np.amin(peaks) # index of highest frequency (if neg.)                            
+          eTime = minc * tScaleFac  # time in seconds
+          stdAvg = (std2+std3)/2
+
+        mphMax = (fRange - maxP) * mphScale
+        mphAvg = (fRange - avgP) * mphScale
+        mphMin = (fRange - minP) * mphScale
+        stdAvg *= 5.0/abs(mphAvg) # scaled by avg speed
+        #mphStd = std * mphScale
+        if ((stdAvg < 8) and ((abs(mphMax) > 5) or (eDur > 5))): # skip any slow events if too short
+          df.loc[eCount] = [mphMax, mphAvg, mphMin, stdAvg, eTime, eDur] # add to dataframe
+          eCount += 1
+          # add visible box around detected event on graph
+          rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr,
+                                  fill=False, edgecolor='red', linewidth=1)
+          ax[1].add_patch(rect)
+
           
-plt.show()
+
+df = df.sort_values(by=['time'])  # events in time order of appearance
+df = df.reset_index(drop=True)  # reset the index to be in sorted time order
+print(df)
 print("Total events: %d" % eCount)
 
-maskImg = (mask * 255).astype('uint8')
+plt.show()
 
-out = image * (mask > 0)
 
-cv2.imwrite(fname_out1,imgOut) # detected image
-cv2.imwrite(fname_out2,maskImg) # peaks mask
+#maskImg = (mask * 255).astype('uint8')
+#out = image * (mask > 0)
+#cv2.imwrite(fname_out1,imgOut) # detected image
+#cv2.imwrite(fname_out2,maskImg) # peaks mask
 
 # colormap names   magma plasma  bone
 # stackoverflow.com/questions/66539861/where-is-the-list-of-available-built-in-colormap-names
-
