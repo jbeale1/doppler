@@ -1,7 +1,7 @@
 """
 Plot Radar I/Q data on spectrogram
 Python3 code with scipy, numpy, matplotlib
-J.Beale, Jan.8 2023
+J.Beale, Jan.9 2023
 """
 
 import numpy as np
@@ -153,6 +153,7 @@ imgOut = image * (mask > 0)  # image with non-event background masked off
 (fTotal, colTotal) = image.shape  # dimensions of image
 tScaleFac = (N/fs)/colTotal       # convert image pixels to time (sec)
 eCount = 0
+print("n, mph, time, duration")
 for region in props1:
     if region.area >= 2000:  # draw a bounding rectangle
         eCount += 1
@@ -162,15 +163,19 @@ for region in props1:
         rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr,
                                   fill=False, edgecolor='red', linewidth=1)
         ax[1].add_patch(rect)
-        if (maxr < fRange): # positive frequency half of plot
-          peaks = np.argmax(imgS, axis=0) # max along 1st axis
-          # print(peaks.size, peaks)
-          peakP = minr + np.amin(peaks) # index of highest frequency (if positive)
-          fPk = (fRange - peakP) * ((fs/2)/(FFTsize/2))
-          mph = DopFreqScale * fPk
-          eTime = maxc * tScaleFac  # time in seconds
-          eDur = (maxc-minc) * tScaleFac
-          print("%d, %5.2f mph, at %5.1f s, dur= %5.1f s" 
+
+        eDur = (maxc-minc) * tScaleFac
+        peaks = np.argmax(imgS, axis=0) # max along 1st axis
+        #peakP = minr + np.amin(peaks) # index of highest frequency (if pos.)        
+        # print(peaks.size, peaks)
+        if (minr < fRange): # positive frequency half of plot
+          peakP = minr + np.amin(peaks) # index of highest frequency (if pos.)                  
+        if (maxr > fRange): # negative frequency, bottom half of plot
+          peakP = minr + np.amax(peaks) # index of highest frequency (if neg.)                            
+        fPk = (fRange - peakP) * (fs/FFTsize)
+        mph = DopFreqScale * fPk
+        eTime = maxc * tScaleFac  # time in seconds
+        print("%d, %+06.2f, %5.1f, %5.1f" 
                 % (eCount, mph, eTime, eDur))
           
 plt.show()
@@ -185,3 +190,4 @@ cv2.imwrite(fname_out2,maskImg) # peaks mask
 
 # colormap names   magma plasma  bone
 # stackoverflow.com/questions/66539861/where-is-the-list-of-available-built-in-colormap-names
+
