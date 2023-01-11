@@ -30,6 +30,7 @@ def doOneImage(fname_in):
     # Radar Ft = 24.15 GHz  Fd=2*Ft*(v/c) v=Fd * c/(2*Ft)   (c/2Ft) = 6.205 (m/s)/kHz = 13.88 mph/kHz
     mphPerHz = 1.0/72.05 # mph/Hz
     mpsPerHz = 6.205E-3  # m/s per Hz
+    fpm = 3.28084  # how many feet in a meter
 
     # audio files saved with 24000 Hz sample rate
     #datraw,fs = librosa.load(fname_in, sr=None, mono=False) # preserve sample rate
@@ -42,7 +43,7 @@ def doOneImage(fname_in):
     x = xR[:,0] + 1j * xR[:,1]  # make complex from 2 reals
 
     fig, ax =  plt.subplots(3)
-    ax[0].set_title('YH-24G01    %s' % (fname1))
+    ax[0].set_title('YH-24G01    %s' % (fname_in))
     ax[0].set(xlabel='time (s)', ylabel='frequency (Hz)')
     ax[0].grid()
 
@@ -114,6 +115,12 @@ def doOneImage(fname_in):
 
     image = imgB # size = (1200, 6567)  (freq x time)
 
+    gap = 150  # don't sum near f=zero (rain noise)
+    Pstack = np.sum(image[0:(fRange-gap),:], axis=0) # + freq, sum vertically 
+    Nstack = np.sum(image[(fRange+gap):,:], axis=0) # - freq, sum vertically 
+    # ax[2].plot(Pstack)  # vertical sums
+    # ax[2].plot(Nstack)  # vertical sums
+
     #thresh = 22  # if there is no rain
     thresh = 45  # if there is rain (was 32)
 
@@ -144,10 +151,10 @@ def doOneImage(fname_in):
 
     pd.options.display.float_format = '{:,.1f}'.format
     df = pd.DataFrame(columns = 
-         ['mph-max','mph-avg','mph-min', 'stdAvg', 'area', 'time', 'dist', 'dur', 'type'])
+         ['mphmax','mphavg','mphmin', 'stdAvg', 'area', 'len',
+            'time', 'dist', 'dur', 'type'])
     mphScale = (fs/FFTsize) * mphPerHz  # to get units of mph
-    mpsScale = (fs/FFTsize) * mpsPerHz  # to get units of m/s
-    fpm = 3.28084  # feet per meter
+    mpsScale = (fs/FFTsize) * mpsPerHz  # to get units of m/s    
 
     for region in props1:
         #print(region.area)
@@ -173,22 +180,28 @@ def doOneImage(fname_in):
             std3 = np.std(np.diff(pk3[0::2]))    # measure of stability of velocity
             #peakP = minr + np.amin(peaks) # index of highest frequency (if pos.)
             Svec = abs(fRange - (minr + peaks)) * mphScale
-
+            posFreq = False # just a default
+            
             # print(peaks.size, peaks)
             if (minr < fRange): # positive frequency half of plot
               maxP = minr + np.amin(peaks) # index of highest frequency (if pos.)                  
               minP = minr + np.amax(peaks) # index of lowest frequency (if pos.)                  
               eTime = maxc * tScaleFac  # time in seconds
               stdAvg = (std1+std2)/2
+              posFreq = True
             if (maxr > fRange): # negative frequency, bottom half of plot
               maxP = minr + np.amax(peaks) # index of highest frequency (if neg.)                            
               minP = minr + np.amin(peaks) # index of highest frequency (if neg.)                            
               eTime = minc * tScaleFac  # start time in seconds
               stdAvg = (std2+std3)/2
+              posFreq = False
 
             mphMax = (fRange - maxP) * mphScale
+            mpsMax = (fRange - maxP) * mpsScale
             mphAvg = (fRange - avgP) * mphScale
+            mpsAvg = (fRange - avgP) * mpsScale
             mphMin = (fRange - minP) * mphScale
+            #print(mpsAvg)
             stdAvg *= 5.0/abs(mphAvg) # scaled by avg speed
             #mphStd = std * mphScale  # stdAvg was 8
             if ((eDur > 2) and (stdAvg < 8) and (abs(mphMax) > 2) and (abs(mphMax) > 1.4) and 
@@ -199,9 +212,21 @@ def doOneImage(fname_in):
               if ( (abs(mphMax) < 5) and (stdAvg > 2) ):
                   eType = 'ped' # by default, unless found otherwise
 
-              ax[2].plot(Svec)  # plot V vs T
+              # ax[2].plot(Svec)  # plot V vs T profile
+              
+              if (posFreq):
+                  sig = Pstack[minc:maxc]
+              else:
+                  sig = Nstack[minc:maxc]
+              sig = sig - (np.amax(sig)*0.7)
+              pkCount = np.sum(sig > 0) # width of peak ~ length of vehicle
+              length = int(pkCount * tScaleFac * abs(mpsMax) * fpm) # in feet
+              ax[2].plot(sig)  # vertical sums
+              ax[2].grid()              
+              
                 # add this event to dataframe
-              df.loc[eCount] = [mphMax, mphAvg, mphMin, stdAvg, area, eTime, mDist, eDur, eType]
+              df.loc[eCount] = [mphMax, mphAvg, mphMin, stdAvg, area, length,
+                                eTime, mDist, eDur, eType]
               eCount += 1
               # add visible box around detected event on graph
               rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr,
@@ -219,7 +244,9 @@ def doOneImage(fname_in):
     if (savePlot):
         maskImg = (mask * 255).astype('uint8')
         out = image * (mask > 0)
-        fbase = os.path.basename(fname1)
+        fbase = os.path.basename(fname_in)
+        if ( fbase[-4:] == '.wav'):  # remove the .wav extension
+            fbase = fbase[:-4]
         fname_out1= fdirOut + fbase + "_1.png"
         fname_out2= fdirOut + fbase + "_2.png"
         cv2.imwrite(fname_out1,imgOut) # detected image
@@ -230,10 +257,13 @@ def doOneImage(fname_in):
 # ======================================================================
 # Main program here
 
+fdir = "C:/Users/beale/Documents/Audio/"
+
 fdirOut = "./"
-showPlot = False  # show spectrogram graphs
+showPlot = True  # show spectrogram graphs
 savePlot = True  # save thresholded spectrogram images
 
+"""
 n = len(sys.argv)
 #print("Total arguments passed:", n)
 if (n < 2):
@@ -241,7 +271,14 @@ if (n < 2):
     sys.exit()
     
 fname1 = sys.argv[1]
+"""
 
+#fname1 = "DpD_2023-01-07_16-30-00"
+#fname1 = "DpD_2023-01-10_18-40-00"
+#fname1 = "DpD_2023-01-08_20-15-00"  # rain
+fname1 = "DpD_2023-01-08_17-20-00"  # rain
+
+fname1 = fdir + fname1
 if ( fname1[-4:] != '.wav'):
     fname1 += '.wav'
 
