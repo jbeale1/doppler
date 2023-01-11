@@ -26,6 +26,6 @@ Given that the green signal is from the left-pointing sensor, you can see below 
 
 ![Walk-Truck](https://github.com/jbeale1/doppler/blob/master/D_Walk-Truck.jpg)
 
-If you have a sensor with both I/Q outputs (quadrature) you can directly detect the difference between motion toward and away from the sensor. This plot shows a spectrogram including negative frequencies, of the complex I/Q signal from a YH-24G01 24GHz module. This is me walking about 11 meters away and then back. I was careful to walk centered on-axis along the relatively tight antenna pattern of this module. The code which made this plot is "IQ-plot1.py" in this github directory.
+If you have a sensor with both I/Q outputs (quadrature) you can directly detect the difference between motion toward and away from the sensor. This plot shows a spectrogram including negative frequencies, of the complex I/Q signal from a YH-24G01 24GHz module. This is me walking about 11 meters away and then back. I was careful to walk centered on-axis along the relatively tight antenna pattern of this module. The code which made this plot is "plotIQ.py" in this github directory.
 
 ![Walk-IQ](https://github.com/jbeale1/doppler/blob/master/IQ-Walk.jpg)
