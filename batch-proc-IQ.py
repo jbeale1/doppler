@@ -48,7 +48,10 @@ for fpath in flist:
     subprocess.run(["sox", lpath3, lpathW]) # convert it to .wav format
 
     subprocess.run([proc, lpathW]) # convert it to .wav format
-
+    subprocess.run(["rm", lpath3, lpathW]) # remove files from tmp folder when done
+    # sys.exit()
+    
 # ========================================================
 dstring = time.strftime('%Y-%b-%d %H:%M:%S')
 print("Run complete at %s." % dstring)
+
