@@ -11,6 +11,7 @@ import sys         # command-line arguments
 import os          # find basename from full file path
 import subprocess # run scp, sox
 import glob     # list of files in directory
+import gc         # memory getting filled up
 
 import numpy as np
 from scipy import signal
@@ -285,6 +286,9 @@ def doOneImage(fname_in):
         cv2.imwrite(fname_out1,imgOut) # detected image
         cv2.imwrite(fname_out2,maskImg) # peaks mask
 
+    #del datraw,Pxx,xR,x,fig,ax,p1,freqs,bins,im
+    #gc.collect()  # done with all the intermediate files
+
     return df
 
 # ======================================================================
@@ -296,7 +300,6 @@ fdirOut = "./"
 showPlot = False  # show spectrogram graphs
 savePlot = False  # save thresholded spectrogram images
 
-"""
 n = len(sys.argv)
 #print("Total arguments passed:", n)
 if (n < 2):
@@ -305,7 +308,6 @@ if (n < 2):
     sys.exit()
     
 fname1 = sys.argv[1]
-"""
 
 #fname1 = "DpD_2023-01-07_16-30-00"
 #fname1 = "DpD_2023-01-10_18-40-00"
@@ -316,21 +318,38 @@ fname1 = sys.argv[1]
 #if ( fname1[-4:] != '.wav'):
 #    fname1 += '.wav'
 
+resultFile = "/home/john/Audio/images/DopplerD-Jan.csv"
+
+"""
 gdir="/home/john/Audio/images/old/2023/"  # guide directory, list of .png files
 # path to remote host directory with .mp3 files
 rdir="john@john-Z83-4.local:/media/john/Seagate4GB/MINIX-John/Doppler1/old/"
 ldir="/dev/shm/"  # local working directory
-resultFile = "/home/john/Audio/images/DopplerD-Jan.csv"
 
 cheader = "epoch, max(mph), avg(mph), min(mph), std(px), area(px), "
 cheader += "length(ft), distance(ft), duration, kind"
 
 flist = glob.glob(gdir + "DpD_*.png")  # list of all known mp3 files
 flist.sort() # let's do them in ascending order
-
-with open(resultFile, 'w') as f:
-    f.write(cheader+"\n")  # start output file with column header line
+"""
+with open(resultFile, 'a') as f:
+    #f.write(cheader+"\n")  # start output file with column header line
+    df = doOneImage(fname1) # returns events in Pandas DataFrame
     
+    eCount = len(df.index)  # count of all events
+    today = datetime.date.today()
+    dstring = today.strftime('%Y-%b-%d')
+
+    f.write("# FILE, %s, %s, %d\n" % (fname1, dstring, eCount))
+    print("# FILE, %s, %s, %d" % (fname1, dstring, eCount))
+    print(df.to_csv(sep=',', float_format =
+                    '{: 6.1f}'.format, index=False, header=False))
+    f.write(df.to_csv(sep=',', float_format =
+                    '{: 6.1f}'.format, index=False, header=False))
+
+    #f.flush()  # because we're impatient to check results
+
+"""
     for fpath in flist:
         fpath1 = os.path.splitext(fpath)[0]
         froot = os.path.basename(fpath1) # base filename from full path
@@ -351,6 +370,7 @@ with open(resultFile, 'w') as f:
         # process this audio file, find events
         fname1 = froot  # no path, no extension
         df = doOneImage(lpathW) # returns events in Pandas DataFrame
+        
         eCount = len(df.index)  # count of all events
         today = datetime.date.today()
         dstring = today.strftime('%Y-%b-%d')
@@ -364,6 +384,10 @@ with open(resultFile, 'w') as f:
         f.flush()  # because we're impatient to check results
         subprocess.run(["rm", lpath3, lpathW]) # remove input files from ramdisk
 
+        del df
+        gc.collect()  # done with all the intermediate files
+
+"""
 
 """
 pd.set_option('display.max_columns', None) # show all columns in dataframe
@@ -372,3 +396,4 @@ pd.set_option('max_colwidth', None)
 pd.options.display.float_format = '{:,.1f}'.format
 print(df)
 """
+
