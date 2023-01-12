@@ -6,7 +6,6 @@ Python3 code with scipy, numpy, matplotlib
 J.Beale, Jan.11 2023
 """
 
-
 import sys         # command-line arguments
 import os          # find basename from full file path
 import subprocess # run scp, sox
@@ -54,9 +53,6 @@ def doOneImage(fname_in):
     mpsPerHz = 6.205E-3  # m/s per Hz
     fpm = 3.28084  # how many feet in a meter
 
-    # audio files saved with 24000 Hz sample rate
-    #datraw,fs = librosa.load(fname_in, sr=None, mono=False) # preserve sample rate
-
     fbase = os.path.basename(fname_in) # base filename from full path
     epoch = string2epoch(fbase)  # Unix epoch time from filename
 
@@ -86,11 +82,6 @@ def doOneImage(fname_in):
     lm = -180 # clamp signal below this level in dB
     fMask = 5    # low-freq bin range to clamp to 0
 
-    # print("Pxx 0,0 value: ", Pxx[0,0], Pxx[4095,0])
-    # max freq = fs/2 => +FFTsize in matrix
-    # 0 freq = 0 => FFTsize/2
-    # -fs/2 => 0 in matrix
-    #print("Pxx size ", Pxx.shape) # (4096, 6566) 4096 => fs/2
     p1 = (Pxx[c-fRange:c+fRange,:]) # selected frequency region
 
     pMin = np.amin(p1)
@@ -113,9 +104,6 @@ def doOneImage(fname_in):
 
     pdif = 20*np.log10(pL) # units of dB
     p2 = np.maximum(lm,pdif)
-    # ax[1].grid()
-    # ax[1].imshow(p2,cmap='magma')
-    # ax[1].set_title('spectrogram with residual opposite phase subtracted')
 
     # p2.shape = (1000,1311)
     pMin = np.amin(p2)
@@ -143,10 +131,7 @@ def doOneImage(fname_in):
     gap = 150  # don't sum near f=zero (rain noise)
     Pstack = np.sum(image[0:(fRange-gap),:], axis=0) # + freq, sum vertically 
     Nstack = np.sum(image[(fRange+gap):,:], axis=0) # - freq, sum vertically 
-    # ax[2].plot(Pstack)  # vertical sums
-    # ax[2].plot(Nstack)  # vertical sums
 
-    #thresh = 22  # if there is no rain
     thresh = 45  # if there is rain (was 32)
 
     bw = morphology.closing(image > thresh, morphology.square(3))
@@ -164,7 +149,6 @@ def doOneImage(fname_in):
     ax[1].set_title('labelled image')
     # ax[1].axis('off')
 
-
     maskImg = (mask * 255).astype('uint8')
     imgOut = image * (mask > 0)  # image with non-event background masked off
 
@@ -172,10 +156,9 @@ def doOneImage(fname_in):
     # Time Scale Factor =  0.045689  = 300 sec / 6565 pixel columns
     tScaleFac = (N/fs)/colTotal       # convert horizontal image pixels to time (sec)
     eCount = 0
-    #print("n, mph, time, duration")
 
     df = pd.DataFrame(columns = 
-         ['epoch', 'mphmax','mphavg','mphmin', 'stdAvg', 'area', 'len',
+         ['epoch', 'dir', 'mphmax','mphavg','mphmin', 'stdAvg', 'area', 'len',
            'dist', 'dur', 'type'])
     mphScale = (fs/FFTsize) * mphPerHz  # to get units of mph
     mpsScale = (fs/FFTsize) * mpsPerHz  # to get units of m/s    
@@ -255,19 +238,25 @@ def doOneImage(fname_in):
 
               ax[2].plot(sig)  # vertical sums
               ax[2].grid()              
-              tIndex = typeDict[eType]
+              tIndex = int(typeDict[eType])
               aTime = epoch + eTime  # absolute epoch time = file start + offset
+              direction = 0
+              if (mphAvg > 0):
+                  direction = 1
+              mphMax = abs(mphMax)
+              mphAvg = abs(mphAvg)
+              mphMin = abs(mphMin)
+              mDist = abs(mDist)
               #print(aTime)
 
               # add this event to dataframe
-              df.loc[eCount] = [aTime, mphMax, mphAvg, mphMin, stdAvg, areaS, length,
+              df.loc[eCount] = [aTime, direction, mphMax, mphAvg, mphMin, stdAvg, areaS, length,
                                 mDist, eDur, tIndex]
               eCount += 1
               # add visible box around detected event on graph
               rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr,
                                       fill=False, edgecolor='red', linewidth=1)
               ax[1].add_patch(rect)
-
               
 
     df = df.sort_values(by=['epoch'])  # events in time order of appearance
@@ -286,22 +275,16 @@ def doOneImage(fname_in):
         cv2.imwrite(fname_out1,imgOut) # detected image
         cv2.imwrite(fname_out2,maskImg) # peaks mask
 
-    #del datraw,Pxx,xR,x,fig,ax,p1,freqs,bins,im
-    #gc.collect()  # done with all the intermediate files
-
     return df
 
 # ======================================================================
 # Main program here
-
-# fdir = "C:/Users/beale/Documents/Audio/"
 
 fdirOut = "./"
 showPlot = False  # show spectrogram graphs
 savePlot = False  # save thresholded spectrogram images
 
 n = len(sys.argv)
-#print("Total arguments passed:", n)
 if (n < 2):
     print("%s Version 0.1" % sys.argv[0])
     print("%s: Missing argument. Must supply a filename to work on." % sys.argv[0])
@@ -309,36 +292,13 @@ if (n < 2):
     
 fname1 = sys.argv[1]
 
-#fname1 = "DpD_2023-01-07_16-30-00"
-#fname1 = "DpD_2023-01-10_18-40-00"
-#fname1 = "DpD_2023-01-08_20-15-00"  # rain
-#fname1 = "DpD_2023-01-08_17-20-00"  # rain
-
-#fname1 = fdir + fname1
-#if ( fname1[-4:] != '.wav'):
-#    fname1 += '.wav'
-
 resultFile = "/home/john/Audio/images/DopplerD-Jan.csv"
 
-"""
-gdir="/home/john/Audio/images/old/2023/"  # guide directory, list of .png files
-# path to remote host directory with .mp3 files
-rdir="john@john-Z83-4.local:/media/john/Seagate4GB/MINIX-John/Doppler1/old/"
-ldir="/dev/shm/"  # local working directory
-
-cheader = "epoch, max(mph), avg(mph), min(mph), std(px), area(px), "
-cheader += "length(ft), distance(ft), duration, kind"
-
-flist = glob.glob(gdir + "DpD_*.png")  # list of all known mp3 files
-flist.sort() # let's do them in ascending order
-"""
 with open(resultFile, 'a') as f:
-    #f.write(cheader+"\n")  # start output file with column header line
     df = doOneImage(fname1) # returns events in Pandas DataFrame
     
     eCount = len(df.index)  # count of all events
-    today = datetime.date.today()
-    dstring = today.strftime('%Y-%b-%d')
+    dstring = time.strftime('%Y-%b-%d %H:%M:%S')
 
     f.write("# FILE, %s, %s, %d\n" % (fname1, dstring, eCount))
     print("# FILE, %s, %s, %d" % (fname1, dstring, eCount))
@@ -347,47 +307,6 @@ with open(resultFile, 'a') as f:
     f.write(df.to_csv(sep=',', float_format =
                     '{: 6.1f}'.format, index=False, header=False))
 
-    #f.flush()  # because we're impatient to check results
-
-"""
-    for fpath in flist:
-        fpath1 = os.path.splitext(fpath)[0]
-        froot = os.path.basename(fpath1) # base filename from full path
-        #print(froot)  # of form: "DpD_2023-01-11_14-05-00"
-
-        # froot = "DpD_2023-01-11_20-55-00"
-        fname_mp3 = froot + ".mp3"
-
-        rpath3 = rdir + fname_mp3
-        lpath3 = ldir + fname_mp3
-        lpathW = ldir + froot + ".wav"
-
-        # print(rpath3, lpath3, lpathW)
-        subprocess.run(["scp", rpath3, lpath3]) # get the .mp3 from remote host
-        subprocess.run(["sox", lpath3, lpathW]) # convert it to .wav format
-        #sys.exit()  # just for testing here
-        
-        # process this audio file, find events
-        fname1 = froot  # no path, no extension
-        df = doOneImage(lpathW) # returns events in Pandas DataFrame
-        
-        eCount = len(df.index)  # count of all events
-        today = datetime.date.today()
-        dstring = today.strftime('%Y-%b-%d')
-        f.write("# FILE, %s, %s, %d\n" % (fname1, dstring, eCount))
-        print("# FILE, %s, %s, %d" % (fname1, dstring, eCount))
-        print(df.to_csv(sep=',', float_format =
-                        '{: 6.1f}'.format, index=False, header=False))
-        f.write(df.to_csv(sep=',', float_format =
-                        '{: 6.1f}'.format, index=False, header=False))
-
-        f.flush()  # because we're impatient to check results
-        subprocess.run(["rm", lpath3, lpathW]) # remove input files from ramdisk
-
-        del df
-        gc.collect()  # done with all the intermediate files
-
-"""
 
 """
 pd.set_option('display.max_columns', None) # show all columns in dataframe
