@@ -3,11 +3,15 @@
 """
 Plot Radar I/Q data on spectrogram
 Python3 code with scipy, numpy, matplotlib
-J.Beale, Jan.10 2023
+J.Beale, Jan.11 2023
 """
+
 
 import sys         # command-line arguments
 import os          # find basename from full file path
+import subprocess # run scp, sox
+import glob     # list of files in directory
+
 import numpy as np
 from scipy import signal
 from scipy.io import wavfile
@@ -18,6 +22,7 @@ import pandas as pd  # dataframes for output
 # import librosa # only for reading .mp3 files
 
 import datetime # to show today's date
+import time     # epoch timestamp from string conversion
 import cv2  # OpenCV for processing detected events
 from skimage import morphology
 from skimage.filters import threshold_otsu
@@ -25,6 +30,22 @@ from skimage.segmentation import clear_border
 from skimage.measure import label, regionprops
 from skimage.color import label2rgb
 
+# Convert filename in form "xxx_YYYY-MM-DD_hh-mm-ss.xxx"
+# to Unix epoch time, assuming filename has local time (YMD hms)
+def string2epoch(fname):
+    try:
+        dateS,timeS = fname[4:23].split('_')
+        (Y,M,D) = [int(i) for i in dateS.split('-')]
+        (h,m,s) = [int(i) for i in timeS.split('-')]
+        date_time = datetime.datetime(Y,M,D,h,m,s)
+        epoch = (time.mktime(date_time.timetuple()))
+        if (s == 59):  # assume was just a few ms before :00
+            epoch += 1
+    except:
+        epoch=0
+    return epoch
+
+# Use spectrogram of doppler I,Q data to find objects and speeds
 def doOneImage(fname_in):
 
     # Radar Ft = 24.15 GHz  Fd=2*Ft*(v/c) v=Fd * c/(2*Ft)   (c/2Ft) = 6.205 (m/s)/kHz = 13.88 mph/kHz
@@ -34,6 +55,9 @@ def doOneImage(fname_in):
 
     # audio files saved with 24000 Hz sample rate
     #datraw,fs = librosa.load(fname_in, sr=None, mono=False) # preserve sample rate
+
+    fbase = os.path.basename(fname_in) # base filename from full path
+    epoch = string2epoch(fbase)  # Unix epoch time from filename
 
     fs, datraw = scipy.io.wavfile.read(fname_in) # load file with scipy
     N,ch = datraw.shape
@@ -149,16 +173,17 @@ def doOneImage(fname_in):
     eCount = 0
     #print("n, mph, time, duration")
 
-    pd.options.display.float_format = '{:,.1f}'.format
     df = pd.DataFrame(columns = 
-         ['mphmax','mphavg','mphmin', 'stdAvg', 'area', 'len',
-            'time', 'dist', 'dur', 'type'])
+         ['epoch', 'mphmax','mphavg','mphmin', 'stdAvg', 'area', 'len',
+           'dist', 'dur', 'type'])
     mphScale = (fs/FFTsize) * mphPerHz  # to get units of mph
     mpsScale = (fs/FFTsize) * mpsPerHz  # to get units of m/s    
+    typeDict = {'ped':0, 'car':1, 'van':2, 'bus':3, 'odd':9} # all the events we know
 
     for region in props1:
         #print(region.area)
         area = region.area
+        areaS = (area/10)  # scaled down for easier display
         if area >= 700:  # was 1200 draw a bounding rectangle
             eType = 'car' # by default, unless found otherwise
             fCenter = region.centroid[0]                                  
@@ -206,9 +231,6 @@ def doOneImage(fname_in):
             #mphStd = std * mphScale  # stdAvg was 8
             if ((eDur > 2) and (stdAvg < 8) and (abs(mphMax) > 2) and (abs(mphMax) > 1.4) and 
                   ((abs(mphMax) > 5) or (eDur > 5))): # skip any slow events if too short
-              if ( (abs(mphMax) > 5) and ((stdAvg > 0.75) or (mDist > 300)) ):
-                  eType = 'o_car' # probably combined events of some kind
-
               if ( (abs(mphMax) < 5) and (stdAvg > 2) ):
                   eType = 'ped' # by default, unless found otherwise
 
@@ -220,13 +242,25 @@ def doOneImage(fname_in):
                   sig = Nstack[minc:maxc]
               sig = sig - (np.amax(sig)*0.7)
               pkCount = np.sum(sig > 0) # width of peak ~ length of vehicle
-              length = int(pkCount * tScaleFac * abs(mpsMax) * fpm) # in feet
+              length = int(pkCount * tScaleFac * abs(mpsAvg) * fpm) # in feet
+              if (mphAvg < 0):
+                  length *= 0.75  # fudge factor: vehicles in far lane look longer
+              if (length > 18):
+                  eType = 'van'
+              if (length > 40):  
+                  eType = 'bus'
+              if ( (abs(mphMax) > 5) and ((stdAvg > 0.75) or (mDist > 300)) ):
+                  eType = 'odd' # probably combined events of some kind
+
               ax[2].plot(sig)  # vertical sums
               ax[2].grid()              
-              
-                # add this event to dataframe
-              df.loc[eCount] = [mphMax, mphAvg, mphMin, stdAvg, area, length,
-                                eTime, mDist, eDur, eType]
+              tIndex = typeDict[eType]
+              aTime = epoch + eTime  # absolute epoch time = file start + offset
+              #print(aTime)
+
+              # add this event to dataframe
+              df.loc[eCount] = [aTime, mphMax, mphAvg, mphMin, stdAvg, areaS, length,
+                                mDist, eDur, tIndex]
               eCount += 1
               # add visible box around detected event on graph
               rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr,
@@ -235,7 +269,7 @@ def doOneImage(fname_in):
 
               
 
-    df = df.sort_values(by=['time'])  # events in time order of appearance
+    df = df.sort_values(by=['epoch'])  # events in time order of appearance
     df = df.reset_index(drop=True)  # reset the index to be in sorted time order
 
     if (showPlot):
@@ -244,7 +278,6 @@ def doOneImage(fname_in):
     if (savePlot):
         maskImg = (mask * 255).astype('uint8')
         out = image * (mask > 0)
-        fbase = os.path.basename(fname_in)
         if ( fbase[-4:] == '.wav'):  # remove the .wav extension
             fbase = fbase[:-4]
         fname_out1= fdirOut + fbase + "_1.png"
@@ -257,16 +290,17 @@ def doOneImage(fname_in):
 # ======================================================================
 # Main program here
 
-fdir = "C:/Users/beale/Documents/Audio/"
+# fdir = "C:/Users/beale/Documents/Audio/"
 
 fdirOut = "./"
-showPlot = True  # show spectrogram graphs
-savePlot = True  # save thresholded spectrogram images
+showPlot = False  # show spectrogram graphs
+savePlot = False  # save thresholded spectrogram images
 
 """
 n = len(sys.argv)
 #print("Total arguments passed:", n)
 if (n < 2):
+    print("%s Version 0.1" % sys.argv[0])
     print("%s: Missing argument. Must supply a filename to work on." % sys.argv[0])
     sys.exit()
     
@@ -276,20 +310,65 @@ fname1 = sys.argv[1]
 #fname1 = "DpD_2023-01-07_16-30-00"
 #fname1 = "DpD_2023-01-10_18-40-00"
 #fname1 = "DpD_2023-01-08_20-15-00"  # rain
-fname1 = "DpD_2023-01-08_17-20-00"  # rain
+#fname1 = "DpD_2023-01-08_17-20-00"  # rain
 
-fname1 = fdir + fname1
-if ( fname1[-4:] != '.wav'):
-    fname1 += '.wav'
+#fname1 = fdir + fname1
+#if ( fname1[-4:] != '.wav'):
+#    fname1 += '.wav'
 
-df = doOneImage(fname1)
+gdir="/home/john/Audio/images/old/2023/"  # guide directory, list of .png files
+# path to remote host directory with .mp3 files
+rdir="john@john-Z83-4.local:/media/john/Seagate4GB/MINIX-John/Doppler1/old/"
+ldir="/dev/shm/"  # local working directory
+resultFile = "/home/john/Audio/images/DopplerD-Jan.csv"
 
-eCount = len(df.index)
+cheader = "epoch, max(mph), avg(mph), min(mph), std(px), area(px), "
+cheader += "length(ft), distance(ft), duration, kind"
 
-today = datetime.date.today()
-dstring = today.strftime('%Y-%b-%d')
-print("%s at %s  Total events: %d" % (fname1, dstring, eCount))
+flist = glob.glob(gdir + "DpD_*.png")  # list of all known mp3 files
+flist.sort() # let's do them in ascending order
+
+with open(resultFile, 'w') as f:
+    f.write(cheader+"\n")  # start output file with column header line
+    
+    for fpath in flist:
+        fpath1 = os.path.splitext(fpath)[0]
+        froot = os.path.basename(fpath1) # base filename from full path
+        #print(froot)  # of form: "DpD_2023-01-11_14-05-00"
+
+        # froot = "DpD_2023-01-11_20-55-00"
+        fname_mp3 = froot + ".mp3"
+
+        rpath3 = rdir + fname_mp3
+        lpath3 = ldir + fname_mp3
+        lpathW = ldir + froot + ".wav"
+
+        # print(rpath3, lpath3, lpathW)
+        subprocess.run(["scp", rpath3, lpath3]) # get the .mp3 from remote host
+        subprocess.run(["sox", lpath3, lpathW]) # convert it to .wav format
+        #sys.exit()  # just for testing here
+        
+        # process this audio file, find events
+        fname1 = froot  # no path, no extension
+        df = doOneImage(lpathW) # returns events in Pandas DataFrame
+        eCount = len(df.index)  # count of all events
+        today = datetime.date.today()
+        dstring = today.strftime('%Y-%b-%d')
+        f.write("# FILE, %s, %s, %d\n" % (fname1, dstring, eCount))
+        print("# FILE, %s, %s, %d" % (fname1, dstring, eCount))
+        print(df.to_csv(sep=',', float_format =
+                        '{: 6.1f}'.format, index=False, header=False))
+        f.write(df.to_csv(sep=',', float_format =
+                        '{: 6.1f}'.format, index=False, header=False))
+
+        f.flush()  # because we're impatient to check results
+        subprocess.run(["rm", lpath3, lpathW]) # remove input files from ramdisk
+
+
+"""
+pd.set_option('display.max_columns', None) # show all columns in dataframe
+pd.set_option('display.expand_frame_repr', False)
+pd.set_option('max_colwidth', None)
+pd.options.display.float_format = '{:,.1f}'.format
 print(df)
-
-# colormap names   magma plasma  bone
-# stackoverflow.com/questions/66539861/where-is-the-list-of-available-built-in-colormap-names
+"""
