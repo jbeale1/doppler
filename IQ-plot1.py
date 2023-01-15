@@ -6,7 +6,7 @@ Python3 code with scipy, numpy, matplotlib
 Based on FFT example at
 https://docs.scipy.org/doc/scipy/tutorial/fft.html
 
-J.Beale, Jan.15 2023
+J.Beale, 1pm Jan.15 2023
 """
 
 
@@ -108,14 +108,17 @@ def doOneImage(fname_in):
     fMask = 3
     pMin0 = np.amin(p1)
     pMax0 = np.amax(p1)
-    pMax = np.maximum(5,pMax0) # don't autoscale noise up too high
-    pRange = pMax0 - pMin0
-    p1[fRange-fMask:fRange+fMask,:]=pMin0  # mask off low frequencies to min value
+    # pMax = np.maximum(5,pMax0) # don't autoscale noise up too high
+    pMax = 6    # typical value
+    pMin = 1E-5 # somewhat higher than usual
+    pRange = pMax - pMin
+    p1[fRange-fMask:fRange+fMask,:]=pMin  # mask off low frequencies to min value
     
     minV = 0.06
     minT = 4.0E-3   # clamp to this minimum threshold
     
-    p1 = (p1 - pMin0) / pRange # normalize range to (0..1)
+    p1 = (p1 - pMin) / pRange # scale to reasonable values
+    p1 = np.clip(p1,0.0,1.0)   # clamp to range (0..1)
     
     p1f = np.flip(p1,0)  # flip array along 1st axis
     pL = p1f - (p1*minV) # subtract off residual from inexact phase shift
@@ -322,9 +325,9 @@ def doOneImage(fname_in):
 # ===================================================================    
 # Main program starts here  
   
-#showPlot = True  # show spectrogram graphs
+showPlot = True  # show spectrogram graphs
 #savePlot = True
-showPlot = False  # show spectrogram graphs
+#showPlot = False  # show spectrogram graphs
 savePlot = False
 
 fdirOut = "./"
@@ -333,6 +336,7 @@ fdirOut = "./"
 #fname_in = wdir + "DpD_2023-01-14_12-35-00.wav"  
 #doOneImage(fname_in)
 
+"""
 n = len(sys.argv)
 if (n < 2):
     print("%s Version 0.1" % sys.argv[0])
@@ -340,19 +344,20 @@ if (n < 2):
     sys.exit()
     
 fname1 = sys.argv[1]
+"""
 
-#fname1 = "DpD_2023-01-14_16-55-00"
-#fname1 = "DpD_2023-01-14_12-35-00"
+fdir="C:/Users/beale/Documents/Audio/"
+fname1 = "DpD_2023-01-14_16-55-00"  # 9 events
+#fname1 = "DpD_2023-01-14_12-35-00"  # 6 events
+#fname1 = "DpD_2023-01-02_11-05-00" # 11 events
+#fname1 = "DpD_2023-01-03_03-45-00" # 0 (noise prob.)
 
-#fdir="C:/Users/beale/Documents/Audio/"
-#fname_in = wdir + "DpD_2023-01-14_16-55-00.wav"
-
-#fname1 = fdir + fname1
-#if ( fname1[-4:] != '.wav'):
-#    fname1 += '.wav'
+fname1 = fdir + fname1
+if ( fname1[-4:] != '.wav'):
+    fname1 += '.wav'
     
-#resultFile = "./DopplerD-Jan.csv"
-resultFile = "/home/john/Audio/images/DLog5.csv"
+resultFile = "./DopplerD-Jan.csv"
+#resultFile = "/home/john/Audio/images/DLog5.csv"
 
 
 with open(resultFile, 'a') as f:
