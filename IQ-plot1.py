@@ -1,3 +1,5 @@
+#!/home/john/anaconda3/envs/cv/bin/python
+
 """
 Plot Radar I/Q data on spectrogram
 Python3 code with scipy, numpy, matplotlib
@@ -27,6 +29,7 @@ from skimage.segmentation import clear_border
 from skimage.measure import label, regionprops
 from skimage.color import label2rgb
 
+# --------------------------------------------------------
 # Convert filename in form "xxx_YYYY-MM-DD_hh-mm-ss.xxx"
 # to Unix epoch time, assuming filename has local time (YMD hms)
 def string2epoch(fname):
@@ -41,6 +44,7 @@ def string2epoch(fname):
     except:
         epoch=0
     return epoch
+# --------------------------------------------------------
 
 
 N = 4096       # size of FFT
@@ -50,6 +54,7 @@ mphPerHz = 1.0/72.05 # mph/Hz
 mpsPerHz = 6.205E-3  # m/s per Hz
 fpm = 3.28084  # how many feet in a meter
 
+# --------------------------------------------------------
 
 def doOneImage(fname_in):
 
@@ -168,7 +173,7 @@ def doOneImage(fname_in):
     label_image = label(mask, background=0)
     props1 = regionprops(label_image)
     ecount = len(props1)
-    print("Found %d events" % ecount)
+    #print("Found %d events" % ecount)
     image_label_overlay = label2rgb(label_image, image=image, bg_label=0)
 
     ax[0].imshow(image_label_overlay)
@@ -316,8 +321,10 @@ def doOneImage(fname_in):
 # ===================================================================    
 # Main program starts here  
   
-showPlot = True  # show spectrogram graphs
-savePlot = True
+#showPlot = True  # show spectrogram graphs
+#savePlot = True
+showPlot = False  # show spectrogram graphs
+savePlot = False
 
 fdirOut = "./"
 #wdir="C:/Users/beale/Documents/Audio/"
@@ -325,7 +332,6 @@ fdirOut = "./"
 #fname_in = wdir + "DpD_2023-01-14_12-35-00.wav"  
 #doOneImage(fname_in)
 
-"""
 n = len(sys.argv)
 if (n < 2):
     print("%s Version 0.1" % sys.argv[0])
@@ -333,19 +339,20 @@ if (n < 2):
     sys.exit()
     
 fname1 = sys.argv[1]
-"""
 
-fname1 = "DpD_2023-01-14_16-55-00"
+#fname1 = "DpD_2023-01-14_16-55-00"
 #fname1 = "DpD_2023-01-14_12-35-00"
 
-fdir="C:/Users/beale/Documents/Audio/"
+#fdir="C:/Users/beale/Documents/Audio/"
 #fname_in = wdir + "DpD_2023-01-14_16-55-00.wav"
 
-fname1 = fdir + fname1
-if ( fname1[-4:] != '.wav'):
-    fname1 += '.wav'
+#fname1 = fdir + fname1
+#if ( fname1[-4:] != '.wav'):
+#    fname1 += '.wav'
     
-resultFile = "./DopplerD-Jan.csv"
+#resultFile = "./DopplerD-Jan.csv"
+resultFile = "/home/john/Audio/images/DLog4.csv"
+
 
 with open(resultFile, 'a') as f:
     df = doOneImage(fname1) # returns events in Pandas DataFrame
