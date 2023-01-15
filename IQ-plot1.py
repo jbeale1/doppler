@@ -106,16 +106,16 @@ def doOneImage(fname_in):
     # convert matrix to OpenCV plot
     
     fMask = 3
-    pMin = np.amin(p1)
-    pMax = np.amax(p1)
-    pMax = np.maximum(4,pMax) # don't autoscale noise up too high
-    pRange = pMax - pMin
-    p1[fRange-fMask:fRange+fMask,:]=pMin  # mask off low frequencies to min value
+    pMin0 = np.amin(p1)
+    pMax0 = np.amax(p1)
+    pMax = np.maximum(5,pMax0) # don't autoscale noise up too high
+    pRange = pMax0 - pMin0
+    p1[fRange-fMask:fRange+fMask,:]=pMin0  # mask off low frequencies to min value
     
     minV = 0.06
     minT = 4.0E-3   # clamp to this minimum threshold
     
-    p1 = (p1 - pMin) / pRange # normalize range to (0..1)
+    p1 = (p1 - pMin0) / pRange # normalize range to (0..1)
     
     p1f = np.flip(p1,0)  # flip array along 1st axis
     pL = p1f - (p1*minV) # subtract off residual from inexact phase shift
@@ -317,7 +317,7 @@ def doOneImage(fname_in):
     
     #cv2.imshow("spectrogram", image)
     #cv2.waitKey(0)
-    return df
+    return (pMin0,pMax0,df)
 
 # ===================================================================    
 # Main program starts here  
@@ -352,17 +352,24 @@ fname1 = sys.argv[1]
 #    fname1 += '.wav'
     
 #resultFile = "./DopplerD-Jan.csv"
-resultFile = "/home/john/Audio/images/DLog4.csv"
+resultFile = "/home/john/Audio/images/DLog5.csv"
 
 
 with open(resultFile, 'a') as f:
-    df = doOneImage(fname1) # returns events in Pandas DataFrame
+    # df = doOneImage(fname1) 
+    (pMin0,pMax0,df) = doOneImage(fname1) # returns events in Pandas DataFrame
     
     eCount = len(df.index)  # count of all events
-    dstring = time.strftime('%Y-%b-%d %H:%M:%S')
+    pedCount = ((df['type']==0)).sum()  # how many pedestrians?
+    badCount = ((df['type']==9)).sum()  # how many bad-looking events?
+    
+    dstring = time.strftime('%H:%M:%S')
 
-    f.write("# FILE, %s, %s, %d\n" % (fname1, dstring, eCount))
-    print("# FILE, %s, %s, %d" % (fname1, dstring, eCount))
+    f.write("# FILE, %s, %s, %.2E, %5.1f, %d, %d, %d\n" %
+        (fname1, dstring, pMin0, pMax0, pedCount, badCount, eCount))
+    print("# FILE, %s, %s, %.2E, %5.1f, %d, %d, %d" %
+        (fname1, dstring, pMin0, pMax0, pedCount, badCount, eCount))
+    #print("# FILE, %s, %s, %d" % (fname1, dstring, eCount))
     print(df.to_csv(sep=',', float_format =
                     '{: 6.1f}'.format, index=False, header=False))
     f.write(df.to_csv(sep=',', float_format =
