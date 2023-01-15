@@ -1,29 +1,26 @@
-#!/home/john/anaconda3/envs/cv/bin/python
-
 """
 Plot Radar I/Q data on spectrogram
 Python3 code with scipy, numpy, matplotlib
-J.Beale, Jan.11 2023
+Based on FFT example at
+https://docs.scipy.org/doc/scipy/tutorial/fft.html
+
+J.Beale, Jan.14 2023
 """
 
-import sys         # command-line arguments
-import os          # find basename from full file path
-import subprocess # run scp, sox
-import glob     # list of files in directory
-import gc         # memory getting filled up
 
-import numpy as np
-from scipy import signal
+import sys         # command-line arguments
+import os
+from scipy.fft import fft, fftfreq, fftshift
+from scipy.signal import cosine
 from scipy.io import wavfile
-import scipy.io
+import numpy as np
 import matplotlib.pyplot as plt
+import cv2  # OpenCV for processing detected events
 import matplotlib.patches as mpatches
 import pandas as pd  # dataframes for output
-# import librosa # only for reading .mp3 files
 
 import datetime # to show today's date
-import time     # epoch timestamp from string conversion
-import cv2  # OpenCV for processing detected events
+import time     # program run time
 from skimage import morphology
 from skimage.filters import threshold_otsu
 from skimage.segmentation import clear_border
@@ -45,94 +42,123 @@ def string2epoch(fname):
         epoch=0
     return epoch
 
-# Use spectrogram of doppler I,Q data to find objects and speeds
-def doOneImage(fname_in):
 
-    # Radar Ft = 24.15 GHz  Fd=2*Ft*(v/c) v=Fd * c/(2*Ft)   (c/2Ft) = 6.205 (m/s)/kHz = 13.88 mph/kHz
-    mphPerHz = 1.0/72.05 # mph/Hz
-    mpsPerHz = 6.205E-3  # m/s per Hz
-    fpm = 3.28084  # how many feet in a meter
+N = 4096       # size of FFT
+slices = 6566  # how many separate segments we do FFT on, in input function
+
+mphPerHz = 1.0/72.05 # mph/Hz
+mpsPerHz = 6.205E-3  # m/s per Hz
+fpm = 3.28084  # how many feet in a meter
+
+
+def doOneImage(fname_in):
 
     fbase = os.path.basename(fname_in) # base filename from full path
     epoch = string2epoch(fbase)  # Unix epoch time from filename
 
-    fs, datraw = scipy.io.wavfile.read(fname_in) # load file with scipy
-    N,ch = datraw.shape
+    fs, datraw = wavfile.read(fname_in) # load file with scipy
+    T = 1.0 / fs # sample interval, (s)
+    Nsamp,ch = datraw.shape
+    
     xR = datraw[:,:].astype(np.float32) / 65535.0
-    #xR = datraw[int(N*.75):,:].astype(np.float32) / 65535.0
-    #xR = datraw[int(N*0.1):int(N*0.3),:].astype(np.float32) / 65535.0
-    x = xR[:,0] + 1j * xR[:,1]  # make complex from 2 reals
-
-    fig, ax =  plt.subplots(3)
-    ax[0].set_title('YH-24G01    %s' % (fname_in))
-    ax[0].set(xlabel='time (s)', ylabel='frequency (Hz)')
-    ax[0].grid()
-
-    FFTsize=int(4096*1)
-    fRange = 4000  # spectrogram displayed frequency range, in Hz
-    Pxx, freqs, bins, im = ax[0].specgram(x, NFFT=FFTsize, Fs=fs, 
-                                        noverlap=3000, scale='dB',
-                                        cmap='magma')
-    A = 3  # paper size (affects plot dpi)
-    plt.rc('figure', figsize=[46.82 * .5**(.5 * A), 33.11 * .5**(.5 * A)])
-    ax[0].axis((None, None, -fRange, fRange))  # freq limits, Hz
-
-    c=int(FFTsize/2) # center frequency (f=0)
-    fRange=int(300*2)  # frequency bins on either size of f=0
-    lm = -180 # clamp signal below this level in dB
-    fMask = 5    # low-freq bin range to clamp to 0
-
-    p1 = (Pxx[c-fRange:c+fRange,:]) # selected frequency region
-
+    #xR = datraw[int(Nsamp*0.03):int(Nsamp*0.06),:].astype(np.float32) / 65535.0
+    y = xR[:,0] + 1j * xR[:,1]  # complex from 2 reals
+    
+    Ntot = y.size
+    # x = np.linspace(0.0, T*Ntot, Ntot, endpoint=False) # full time axis
+    
+    xf = fftfreq(N, T)  # calculate X axis vector in time units
+    xf = fftshift(xf)   # shift FFT output to be symmetric around 0
+    w = cosine(N) # windowing function
+    
+    sgram = np.zeros((N,slices))
+    for i in range(slices):
+        a = int(i * ((Ntot - N)/slices))
+        b = a+N
+        ySlice = y[a:b]  # segment of data to do this FFT on
+        ywf = fft(ySlice*w)  # windowed FFT
+        ywf = fftshift(ywf)  # put zero freq on center instead of edge
+    
+        #ywf = np.maximum(0.01,ywf)  # clamp small noise levels to fixed value
+        #ylog = 20*np.log10(np.abs(ywf)) # convert to dB, 20log10()
+        #sgram[:,i] = ylog  # add this line to spectrogram image
+        sgram[:,i] = np.abs(ywf)  # add this line to spectrogram image
+    
+    # sgram is (N x slices) in size
+    # need to smooth over time and freq for reasonable plot
+    #fRange = int(N/5)   # what part of full (0..N/2) frequency range to show
+    fRange = 600
+    a=int((N/2)-fRange)
+    b=int((N/2)+fRange)
+    p1 = sgram[a:b,:]
+    
+    """
+    plt.imshow(20*np.log10(p1), interpolation='none')
+    #plt.imshow(sgram, interpolation='bicubic')
+    plt.show()
+    """
+    
+    # convert matrix to OpenCV plot
+    
+    fMask = 3
     pMin = np.amin(p1)
     pMax = np.amax(p1)
     pRange = pMax - pMin
-    p1[fRange-fMask:fRange+fMask,:]=pMin  # mask off low frequencies to minimum value
-
+    p1[fRange-fMask:fRange+fMask,:]=pMin  # mask off low frequencies to min value
+    
+    minV = 0.06
+    minT = 4.0E-3   # clamp to this minimum threshold
+    
     p1 = (p1 - pMin) / pRange # normalize range to (0..1)
-    #print("p1 Min = %5.3f  Max = %5.3f" % (pMin, pMax))
-
-    minV = 0.004  # minimum value for data array
-    minT = 1.5E-5   # clamp to this minimum threshold
+    
     p1f = np.flip(p1,0)  # flip array along 1st axis
     pL = p1f - (p1*minV) # subtract off residual from inexact phase shift
     pL = np.maximum(minT,pL) # clamp to positive definite
-
-    pMin = np.amin(pL)
-    pMax = np.amax(pL)
-    # print("Min = %5.3f  Max = %5.3f" % (pMin, pMax))
-
-    pdif = 20*np.log10(pL) # units of dB
-    p2 = np.maximum(lm,pdif)
-
-    # p2.shape = (1000,1311)
+    
+    p2 = 20*np.log10(pL) # units of dB
+    
+    #plt.imshow(p2, interpolation='none')
+    #plt.imshow(sgram, interpolation='bicubic')
+    #plt.show()
+    
     pMin = np.amin(p2)
     pMax = np.amax(p2)
     pRange = pMax - pMin
-    img = uint_img = np.array((p2-pMin)*255.0/pRange).astype('uint8')
-
+    
+    # plotIQ_1 setup: (fbins 1200, timebins 6566)
+    
+    # image is 6566 x 1638 pixels
+    img = np.array((p2-pMin)*255.0/pRange).astype('uint8')
+    
     # print('Image Dimensions : ', img.shape) # (fbins 1200, timebins 6566)
-
+    
     Vsize = 7  # vertical motion blur length
     Hsize = 5  # horiz. motion blur
     kernel_motion_blur = np.zeros((Vsize, Vsize))
     kernel_Hmotion_blur = np.zeros((Hsize, Hsize))
-
+    
     kernel_Hmotion_blur[int((Hsize-1)/2),:] = np.ones(Hsize) # H motion
     kernel_Hmotion_blur /= Hsize
-
+    
     kernel_motion_blur[:,int((Vsize-1)/2)] = np.ones(Vsize) # V motion
     kernel_motion_blur /= Vsize
     imgT = cv2.filter2D(img, -1, kernel_motion_blur)
     imgB = cv2.filter2D(imgT, -1, kernel_Hmotion_blur)
-
+    
     image = imgB # size = (1200, 6567)  (freq x time)
+    
+    # =====================================================
+    fig, ax =  plt.subplots(2)  # set up matplotlib plot
+
 
     gap = 150  # don't sum near f=zero (rain noise)
     Pstack = np.sum(image[0:(fRange-gap),:], axis=0) # + freq, sum vertically 
     Nstack = np.sum(image[(fRange+gap):,:], axis=0) # - freq, sum vertically 
+    # ax[2].plot(Pstack)  # vertical sums
+    # ax[2].plot(Nstack)  # vertical sums
 
-    thresh = 45  # if there is rain (was 32)
+    #thresh = 22  # if there is no rain
+    thresh = 45  # if there is rain (was 32)  # *Is this correct? *
 
     bw = morphology.closing(image > thresh, morphology.square(3))
     #cleared = bw
@@ -142,26 +168,29 @@ def doOneImage(fname_in):
     label_image = label(mask, background=0)
     props1 = regionprops(label_image)
     ecount = len(props1)
-    #print("Found %d events" % ecount)
+    print("Found %d events" % ecount)
     image_label_overlay = label2rgb(label_image, image=image, bg_label=0)
 
-    ax[1].imshow(image_label_overlay)
-    ax[1].set_title('labelled image')
+    ax[0].imshow(image_label_overlay)
+    ax[0].set_title('labelled image')
     # ax[1].axis('off')
+
 
     maskImg = (mask * 255).astype('uint8')
     imgOut = image * (mask > 0)  # image with non-event background masked off
 
     (fTotal, colTotal) = image.shape  # dimensions of image
     # Time Scale Factor =  0.045689  = 300 sec / 6565 pixel columns
-    tScaleFac = (N/fs)/colTotal       # convert horizontal image pixels to time (sec)
+    tScaleFac = (Nsamp/fs)/colTotal       # convert horizontal image pixels to time (sec)
     eCount = 0
+    #print("n, mph, time, duration")
 
+    pd.options.display.float_format = '{:,.1f}'.format
     df = pd.DataFrame(columns = 
          ['epoch', 'dir', 'mphmax','mphavg','mphmin', 'stdAvg', 'area', 'len',
            'dist', 'dur', 'type'])
-    mphScale = (fs/FFTsize) * mphPerHz  # to get units of mph
-    mpsScale = (fs/FFTsize) * mpsPerHz  # to get units of m/s    
+    mphScale = (fs/N) * mphPerHz  # to get units of mph
+    mpsScale = (fs/N) * mpsPerHz  # to get units of m/s    
     typeDict = {'ped':0, 'car':1, 'van':2, 'bus':3, 'odd':9} # all the events we know
 
     for region in props1:
@@ -215,6 +244,9 @@ def doOneImage(fname_in):
             #mphStd = std * mphScale  # stdAvg was 8
             if ((eDur > 2) and (stdAvg < 8) and (abs(mphMax) > 2) and (abs(mphMax) > 1.4) and 
                   ((abs(mphMax) > 5) or (eDur > 5))): # skip any slow events if too short
+              if ( (abs(mphMax) > 5) and ((stdAvg > 0.75) or (mDist > 300)) ):
+                  eType = 'o_car' # probably combined events of some kind
+
               if ( (abs(mphMax) < 5) and (stdAvg > 2) ):
                   eType = 'ped' # by default, unless found otherwise
 
@@ -236,8 +268,8 @@ def doOneImage(fname_in):
               if ( (abs(mphMax) > 5) and ((stdAvg > 0.75) or (mDist > 300)) ):
                   eType = 'odd' # probably combined events of some kind
 
-              ax[2].plot(sig)  # vertical sums
-              ax[2].grid()              
+              ax[1].plot(sig)  # vertical sums
+              ax[1].grid()              
               tIndex = int(typeDict[eType])
               aTime = epoch + eTime  # absolute epoch time = file start + offset
               direction = 0
@@ -247,43 +279,53 @@ def doOneImage(fname_in):
               mphAvg = abs(mphAvg)
               mphMin = abs(mphMin)
               mDist = abs(mDist)
-              #print(aTime)
-
+              #print(aTime)          
+              
               # add this event to dataframe
-              df.loc[eCount] = [aTime, direction, mphMax, mphAvg, mphMin, stdAvg, areaS, length,
-                                mDist, eDur, tIndex]
+              df.loc[eCount] = [aTime, direction, mphMax, mphAvg, mphMin, 
+                                stdAvg, areaS, length, mDist, eDur, tIndex]
               eCount += 1
               # add visible box around detected event on graph
               rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr,
                                       fill=False, edgecolor='red', linewidth=1)
-              ax[1].add_patch(rect)
-              
+              ax[0].add_patch(rect)
 
+              
     df = df.sort_values(by=['epoch'])  # events in time order of appearance
     df = df.reset_index(drop=True)  # reset the index to be in sorted time order
-
+        
     if (showPlot):
         plt.show()
-
-    if (savePlot):
-        maskImg = (mask * 255).astype('uint8')
-        out = image * (mask > 0)
+    
+    if (savePlot):        
+        #out = image * (mask > 0)
+        fbase = os.path.basename(fname_in)
         if ( fbase[-4:] == '.wav'):  # remove the .wav extension
             fbase = fbase[:-4]
-        fname_out1= fdirOut + fbase + "_1.png"
-        fname_out2= fdirOut + fbase + "_2.png"
-        cv2.imwrite(fname_out1,imgOut) # detected image
+        fname_out1= fdirOut + fbase + "_3.png"
+        fname_out2= fdirOut + fbase + "_mask.png"
+        cv2.imwrite(fname_out1,image) # detected image
+        #cv2.imwrite(fname_out1,imgOut) # detected image
         cv2.imwrite(fname_out2,maskImg) # peaks mask
-
+    
+    
+    #cv2.imshow("spectrogram", image)
+    #cv2.waitKey(0)
     return df
 
-# ======================================================================
-# Main program here
+# ===================================================================    
+# Main program starts here  
+  
+showPlot = True  # show spectrogram graphs
+savePlot = True
 
 fdirOut = "./"
-showPlot = False  # show spectrogram graphs
-savePlot = False  # save thresholded spectrogram images
+#wdir="C:/Users/beale/Documents/Audio/"
+#fname_in = wdir + "DpD_2023-01-14_16-55-00.wav"
+#fname_in = wdir + "DpD_2023-01-14_12-35-00.wav"  
+#doOneImage(fname_in)
 
+"""
 n = len(sys.argv)
 if (n < 2):
     print("%s Version 0.1" % sys.argv[0])
@@ -291,8 +333,19 @@ if (n < 2):
     sys.exit()
     
 fname1 = sys.argv[1]
+"""
 
-resultFile = "/home/john/Audio/images/DopplerD-Jan.csv"
+fname1 = "DpD_2023-01-14_16-55-00"
+#fname1 = "DpD_2023-01-14_12-35-00"
+
+fdir="C:/Users/beale/Documents/Audio/"
+#fname_in = wdir + "DpD_2023-01-14_16-55-00.wav"
+
+fname1 = fdir + fname1
+if ( fname1[-4:] != '.wav'):
+    fname1 += '.wav'
+    
+resultFile = "./DopplerD-Jan.csv"
 
 with open(resultFile, 'a') as f:
     df = doOneImage(fname1) # returns events in Pandas DataFrame
@@ -306,13 +359,6 @@ with open(resultFile, 'a') as f:
                     '{: 6.1f}'.format, index=False, header=False))
     f.write(df.to_csv(sep=',', float_format =
                     '{: 6.1f}'.format, index=False, header=False))
+    
 
-
-"""
-pd.set_option('display.max_columns', None) # show all columns in dataframe
-pd.set_option('display.expand_frame_repr', False)
-pd.set_option('max_colwidth', None)
-pd.options.display.float_format = '{:,.1f}'.format
-print(df)
-"""
-
+# ---------------------------------------------------------
