@@ -6,7 +6,7 @@ Python3 code with scipy, numpy, matplotlib
 Based on FFT example at
 https://docs.scipy.org/doc/scipy/tutorial/fft.html
 
-J.Beale, Jan.14 2023
+J.Beale, Jan.15 2023
 """
 
 
@@ -108,6 +108,7 @@ def doOneImage(fname_in):
     fMask = 3
     pMin = np.amin(p1)
     pMax = np.amax(p1)
+    pMax = np.maximum(4,pMax) # don't autoscale noise up too high
     pRange = pMax - pMin
     p1[fRange-fMask:fRange+fMask,:]=pMin  # mask off low frequencies to min value
     
