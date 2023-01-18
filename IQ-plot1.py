@@ -6,7 +6,7 @@ Python3 code with scipy, numpy, matplotlib
 Based on FFT example at
 https://docs.scipy.org/doc/scipy/tutorial/fft.html
 
-J.Beale, 1pm Jan.15 2023
+J.Beale, 1pm Jan.17 2023
 """
 
 
@@ -14,6 +14,7 @@ import sys         # command-line arguments
 import os
 from scipy.fft import fft, fftfreq, fftshift
 from scipy.signal import cosine
+from scipy import interpolate  # spline fit
 from scipy.io import wavfile
 import numpy as np
 import matplotlib.pyplot as plt
@@ -52,11 +53,47 @@ slices = 6566  # how many separate segments we do FFT on, in input function
 
 mphPerHz = 1.0/72.05 # mph/Hz
 mpsPerHz = 6.205E-3  # m/s per Hz
+mphPermps = 2.23694  # mph per m/s
 fpm = 3.28084  # how many feet in a meter
 
 # --------------------------------------------------------
 
-def doOneImage(fname_in):
+# Calculate a spline fit to function y and graph it
+def doSpline(y,ax):
+    dirS = "going right"
+    col="b" # blue
+    if (np.average(y)<0):
+        dirS = "going left" # eg. toward speed bump
+        col="g" # green
+        cols="b" # blue
+    else:
+        return  # don't plot cars going right
+    y = np.abs(y)        
+
+    nPoints = 10  # how many points on low-point curve
+
+    x = range(0, len(y))
+    xs = range(0, len(y), int(len(y)/nPoints))
+        
+    knot_numbers = 4 # how many interior knot points in our spline fit
+    x_new = np.linspace(0, 1, knot_numbers+2)[1:-1] # not the endpoints
+    q_knots = np.quantile(x, x_new) # evenly spaced x values 
+    
+    results = interpolate.splrep(x, y, t=q_knots, s=1, full_output=True)
+    t,c,k = results[0]
+    print("Fit results = %5.3f" % results[1])
+    yfit = interpolate.BSpline(t,c,k)(x) # vector same length as 'y'
+    yfits = interpolate.BSpline(t,c,k)(xs)
+
+    # ax.scatter(x,y,c=cols, s=1, label="raw data")
+    ax.plot(x, yfit, '-', c=col, label="spline fit")    
+    ax.grid("on")
+    
+    # plt.show() 
+
+# --------------------------------------------------------
+
+def doOneImage(fname_in, ax):
 
     fbase = os.path.basename(fname_in) # base filename from full path
     epoch = string2epoch(fbase)  # Unix epoch time from filename
@@ -157,7 +194,9 @@ def doOneImage(fname_in):
     image = imgB # size = (1200, 6567)  (freq x time)
     
     # =====================================================
-    fig, ax =  plt.subplots(2)  # set up matplotlib plot
+    
+
+    #fig, ax =  plt.subplots(2)  # set up matplotlib plot
 
 
     gap = 150  # don't sum near f=zero (rain noise)
@@ -180,8 +219,8 @@ def doOneImage(fname_in):
     #print("Found %d events" % ecount)
     image_label_overlay = label2rgb(label_image, image=image, bg_label=0)
 
-    ax[0].imshow(image_label_overlay)
-    ax[0].set_title('labelled image')
+    #ax[0].imshow(image_label_overlay)
+    #ax[0].set_title('labelled image')
     # ax[1].axis('off')
 
 
@@ -214,7 +253,7 @@ def doOneImage(fname_in):
 
             eDur = (maxc-minc) * tScaleFac  # event duration in units of seconds
             # apt = area / eDur # total pixel area per unit time
-            peaks = np.argmax(imgS, axis=0) # max along 1st axis
+            peaks = np.argmax(imgS, axis=0) # strongest freq. at each time step
             vVec = (fRange-(minr + peaks)) * mpsScale # velocity in m/s at each moment in time
             mDist = np.trapz(vVec) * tScaleFac * fpm  # total distance travelled (in feet)
             avgP = minr + np.average(peaks) # average of all values
@@ -253,19 +292,17 @@ def doOneImage(fname_in):
             #mphStd = std * mphScale  # stdAvg was 8
             if ((eDur > 2) and (stdAvg < 8) and (abs(mphMax) > 2) and (abs(mphMax) > 1.4) and 
                   ((abs(mphMax) > 5) or (eDur > 5))): # skip any slow events if too short
-              if ( (abs(mphMax) > 5) and ((stdAvg > 0.75) or (mDist > 300)) ):
-                  eType = 'o_car' # probably combined events of some kind
 
-              if ( (abs(mphMax) < 5) and (stdAvg > 2) ):
+              if ( (abs(mphMax) < 9) and (stdAvg > 2) ):
                   eType = 'ped' # by default, unless found otherwise
 
               # ax[2].plot(Svec)  # plot V vs T profile
               
               if (posFreq):
-                  sig = Pstack[minc:maxc]
+                  sig0 = Pstack[minc:maxc]
               else:
-                  sig = Nstack[minc:maxc]
-              sig = sig - (np.amax(sig)*0.7)
+                  sig0 = Nstack[minc:maxc]
+              sig = sig0 - (np.amax(sig0)*0.7)
               pkCount = np.sum(sig > 0) # width of peak ~ length of vehicle
               length = int(pkCount * tScaleFac * abs(mpsAvg) * fpm) # in feet
               if (mphAvg < 0):
@@ -274,11 +311,15 @@ def doOneImage(fname_in):
                   eType = 'van'
               if (length > 40):  
                   eType = 'bus'
-              if ( (abs(mphMax) > 5) and ((stdAvg > 0.75) or (mDist > 300)) ):
+              if ( (abs(mphMax) > 9) and ((stdAvg > 0.75) or (mDist > 300)) ):
                   eType = 'odd' # probably combined events of some kind
 
-              ax[1].plot(sig)  # vertical sums
-              ax[1].grid()              
+              vMph = vVec * mphPermps  # vehicle speed vs time in mph
+              #ax[1].plot(vMph) # show speed in mph
+              #ax[1].plot(sig0)  # show vertical sums amplitude (sig.strength)
+              #ax[1].grid("on")              
+              doSpline(vMph,ax)
+              
               tIndex = int(typeDict[eType])
               aTime = epoch + eTime  # absolute epoch time = file start + offset
               direction = 0
@@ -294,18 +335,17 @@ def doOneImage(fname_in):
               df.loc[eCount] = [aTime, direction, mphMax, mphAvg, mphMin, 
                                 stdAvg, areaS, length, mDist, eDur, tIndex]
               eCount += 1
+              
               # add visible box around detected event on graph
-              rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr,
-                                      fill=False, edgecolor='red', linewidth=1)
-              ax[0].add_patch(rect)
+              #rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr,
+              #                        fill=False, edgecolor='red', linewidth=1)
+              # ax[0].add_patch(rect)
+
 
               
     df = df.sort_values(by=['epoch'])  # events in time order of appearance
     df = df.reset_index(drop=True)  # reset the index to be in sorted time order
-        
-    if (showPlot):
-        plt.show()
-    
+            
     if (savePlot):        
         #out = image * (mask > 0)
         fbase = os.path.basename(fname_in)
@@ -347,38 +387,65 @@ fname1 = sys.argv[1]
 """
 
 fdir="C:/Users/beale/Documents/Audio/"
-fname1 = "DpD_2023-01-14_16-55-00"  # 9 events
+#fname1 = "DpD_2023-01-14_16-55-00"  # 9 events
 #fname1 = "DpD_2023-01-14_12-35-00"  # 6 events
-#fname1 = "DpD_2023-01-02_11-05-00" # 11 events
+#fname1 = "DpD_2023-01-02_11-05-00" # 11 events (reflector-knee?)
 #fname1 = "DpD_2023-01-03_03-45-00" # 0 (noise prob.)
+#fname1 = "DpD_2023-01-03_04-10-00"  # big signal, no events
+# fname1 = "DpD_2023-01-06_14-25-00" # 5 events, 3 odd; big peak
+#fname1 = "DpD_2023-01-16_17-14-59" # 6 ev: JPB 2 walk, 2 jog
+#fname1 = "DpD_2023-01-16_19-45-00"  # 7 events, JPB 2 walk, 2 jog
+#fname1 = "DpD_2023-01-16_20-45-00"  # 5 events, JPB 2 walk, 2 jog
+#fname1 = "DpD_2023-01-17_16-29-59" # 7 events
+fnames = ["DpD_2023-01-17_15-30-00", # 7 events
+          "DpD_2023-01-17_16-29-59", # 7 events
+          "DpD_2023-01-14_16-55-00",  # 9 events
+          "DpD_2023-01-14_12-35-00",  # 6 events
+          ]
 
-fname1 = fdir + fname1
-if ( fname1[-4:] != '.wav'):
-    fname1 += '.wav'
     
 resultFile = "./DopplerD-Jan.csv"
 #resultFile = "/home/john/Audio/images/DLog5.csv"
 
+plt.ion()
+fig, ax = plt.subplots()
 
-with open(resultFile, 'a') as f:
-    # df = doOneImage(fname1) 
-    (pMin0,pMax0,df) = doOneImage(fname1) # returns events in Pandas DataFrame
-    
-    eCount = len(df.index)  # count of all events
-    pedCount = ((df['type']==0)).sum()  # how many pedestrians?
-    badCount = ((df['type']==9)).sum()  # how many bad-looking events?
-    
-    dstring = time.strftime('%H:%M:%S')
 
-    f.write("# FILE, %s, %s, %.2E, %5.1f, %d, %d, %d\n" %
-        (fname1, dstring, pMin0, pMax0, pedCount, badCount, eCount))
-    print("# FILE, %s, %s, %.2E, %5.1f, %d, %d, %d" %
-        (fname1, dstring, pMin0, pMax0, pedCount, badCount, eCount))
-    #print("# FILE, %s, %s, %d" % (fname1, dstring, eCount))
-    print(df.to_csv(sep=',', float_format =
-                    '{: 6.1f}'.format, index=False, header=False))
-    f.write(df.to_csv(sep=',', float_format =
-                    '{: 6.1f}'.format, index=False, header=False))
+for fname1 in fnames:
+    fname1 = fdir + fname1
+    if ( fname1[-4:] != '.wav'):
+        fname1 += '.wav'
     
+    with open(resultFile, 'a') as f:
+        # df = doOneImage(fname1) 
+        
+        (pMin0,pMax0,df) = doOneImage(fname1,ax) # returns Pandas DataFrame
+        
+        eCount = len(df.index)  # count of all events
+        pedCount = ((df['type']==0)).sum()  # how many pedestrians?
+        badCount = ((df['type']==9)).sum()  # how many bad-looking events?
+        
+        dstring = time.strftime('%H:%M:%S')
+    
+        f.write("# FILE, %s, %s, %.2E, %5.1f, %d, %d, %d\n" %
+            (fname1, dstring, pMin0, pMax0, pedCount, badCount, eCount))
+        print("# FILE, %s, %s, %.2E, %5.1f, %d, %d, %d" %
+            (fname1, dstring, pMin0, pMax0, pedCount, badCount, eCount))
+        #print("# FILE, %s, %s, %d" % (fname1, dstring, eCount))
+        print(df.to_csv(sep=',', float_format =
+                        '{: 6.1f}'.format, index=False, header=False))
+        f.write(df.to_csv(sep=',', float_format =
+                        '{: 6.1f}'.format, index=False, header=False))
+        
+        if (showPlot):
+            fig.canvas.draw()
+            fig.canvas.flush_events()
+            #plt.show(block=False)
+
+    
+if (showPlot):
+            plt.ioff()
+            #plt.pause(0.0001)
+            plt.show()
 
 # ---------------------------------------------------------
