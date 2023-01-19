@@ -6,7 +6,7 @@ Python3 code with scipy, numpy, matplotlib
 Based on FFT example at
 https://docs.scipy.org/doc/scipy/tutorial/fft.html
 
-J.Beale, 1pm Jan.17 2023
+J.Beale, Jan.18 2023
 """
 
 
@@ -50,44 +50,55 @@ def string2epoch(fname):
 
 N = 4096       # size of FFT
 slices = 6566  # how many separate segments we do FFT on, in input function
+sliceDt = 300 / slices  # seconds per value (pixel) in spectrogram
 
 mphPerHz = 1.0/72.05 # mph/Hz
 mpsPerHz = 6.205E-3  # m/s per Hz
 mphPermps = 2.23694  # mph per m/s
 fpm = 3.28084  # how many feet in a meter
-
+fpsPerMph = 1.46667  # convert mph to fps
 # --------------------------------------------------------
 
-# Calculate a spline fit to function y and graph it
-def doSpline(y,ax):
+# Calculate a spline fit to function y (units: mph) and graph it
+def doSpline(yraw,ax):
     dirS = "going right"
     col="b" # blue
-    if (np.average(y)<0):
+    if (np.average(yraw)<0):
         dirS = "going left" # eg. toward speed bump
         col="g" # green
         cols="b" # blue
     else:
         return  # don't plot cars going right
-    y = np.abs(y)        
+    yraw = np.abs(yraw)        # units are mph
+    y = np.concatenate([[yraw[0]*0.75],yraw])
 
-    nPoints = 10  # how many points on low-point curve
+    #nPoints = 10  # how many points on low-point curve
 
     x = range(0, len(y))
-    xs = range(0, len(y), int(len(y)/nPoints))
+    #xs = range(0, len(y), int(len(y)/nPoints))
         
-    knot_numbers = 4 # how many interior knot points in our spline fit
+    knot_numbers = 5 # (was 4) how many interior knot points in our spline fit
     x_new = np.linspace(0, 1, knot_numbers+2)[1:-1] # not the endpoints
     q_knots = np.quantile(x, x_new) # evenly spaced x values 
     
-    results = interpolate.splrep(x, y, t=q_knots, s=1, full_output=True)
+    print("length = %d" % len(x))
+    w = np.ones(len(x)) # weights for spline fit
+    w[1:20] = 0.3  # beginning has low weight
+    results = interpolate.splrep(x, y, w, t=q_knots, s=1, full_output=True)
     t,c,k = results[0]
-    print("Fit results = %5.3f" % results[1])
+    #print("Fit results = %5.3f" % results[1])
     yfit = interpolate.BSpline(t,c,k)(x) # vector same length as 'y'
-    yfits = interpolate.BSpline(t,c,k)(xs)
+    #yfits = interpolate.BSpline(t,c,k)(xs)
+
+    yfps = yfit * fpsPerMph # spline-fit. units are feet per second
+    #yfps = y * fpsPerMph # raw data. units are feet per second
+    yDist = np.cumsum(yfps * sliceDt)  # total feet travelled
 
     # ax.scatter(x,y,c=cols, s=1, label="raw data")
-    ax.plot(x, yfit, '-', c=col, label="spline fit")    
-    ax.grid("on")
+    #ax.plot(x, yfit, '-', c=col, label="spline fit")
+    col = next(ax._get_lines.prop_cycler)['color']
+    ax.scatter(yDist, y, s=1, c=col)
+    ax.plot(yDist, yfit, '-', c=col)    
     
     # plt.show() 
 
@@ -317,8 +328,8 @@ def doOneImage(fname_in, ax):
               vMph = vVec * mphPermps  # vehicle speed vs time in mph
               #ax[1].plot(vMph) # show speed in mph
               #ax[1].plot(sig0)  # show vertical sums amplitude (sig.strength)
-              #ax[1].grid("on")              
-              doSpline(vMph,ax)
+              #ax[1].grid("on")
+              print("mphAvg = %5.3f" % mphAvg)
               
               tIndex = int(typeDict[eType])
               aTime = epoch + eTime  # absolute epoch time = file start + offset
@@ -330,6 +341,8 @@ def doOneImage(fname_in, ax):
               mphMin = abs(mphMin)
               mDist = abs(mDist)
               #print(aTime)          
+              if (mphAvg > 12.0) and (mDist > 150) and (mDist < 280): # not slow, brief, or multiple
+                  doSpline(vMph,ax)
               
               # add this event to dataframe
               df.loc[eCount] = [aTime, direction, mphMax, mphAvg, mphMin, 
@@ -386,7 +399,8 @@ if (n < 2):
 fname1 = sys.argv[1]
 """
 
-fdir="C:/Users/beale/Documents/Audio/"
+#fdir="C:/Users/beale/Documents/Audio/"
+fdir="/home/john/Audio/images/"
 #fname1 = "DpD_2023-01-14_16-55-00"  # 9 events
 #fname1 = "DpD_2023-01-14_12-35-00"  # 6 events
 #fname1 = "DpD_2023-01-02_11-05-00" # 11 events (reflector-knee?)
@@ -397,19 +411,45 @@ fdir="C:/Users/beale/Documents/Audio/"
 #fname1 = "DpD_2023-01-16_19-45-00"  # 7 events, JPB 2 walk, 2 jog
 #fname1 = "DpD_2023-01-16_20-45-00"  # 5 events, JPB 2 walk, 2 jog
 #fname1 = "DpD_2023-01-17_16-29-59" # 7 events
-fnames = ["DpD_2023-01-17_15-30-00", # 7 events
-          "DpD_2023-01-17_16-29-59", # 7 events
-          "DpD_2023-01-14_16-55-00",  # 9 events
-          "DpD_2023-01-14_12-35-00",  # 6 events
-          ]
+#fnames = ["DpD_2023-01-17_15-30-00", # 7 events
+#          "DpD_2023-01-17_16-29-59", # 7 events
+#          "DpD_2023-01-14_16-55-00",  # 9 events
+#          "DpD_2023-01-14_12-35-00",  # 6 events
+#          ]
+"""
+"""
+
+fnames = [
+          "DpD_2023-01-10_17-15-00",
+          "DpD_2023-01-18_07-55-00",
+          "DpD_2023-01-18_08-30-00",
+          "DpD_2023-01-18_08-35-00",
+          "DpD_2023-01-18_08-40-00",
+          "DpD_2023-01-18_08-45-00",
+          "DpD_2023-01-18_09-10-00",
+          "DpD_2023-01-18_09-34-59",
+          "DpD_2023-01-18_12-10-00",
+          "DpD_2023-01-18_12-15-00",
+          "DpD_2023-01-18_12-35-00",
+          "DpD_2023-01-18_12-40-00",
+          "DpD_2023-01-18_14-15-00",
+          "DpD_2023-01-18_14-20-00",
+          "DpD_2023-01-18_17-09-59"
+        ]
 
     
-resultFile = "./DopplerD-Jan.csv"
-#resultFile = "/home/john/Audio/images/DLog5.csv"
+#resultFile = "./DopplerD-Jan.csv"
+resultFile = "/home/john/Audio/images/DLog7.csv"
 
 plt.ion()
 fig, ax = plt.subplots()
+ax.set_xlabel("calculated distance (ft)")
+ax.set_ylabel("vehicle speed (mph)")
+ax.set_title("Vehicle Speed Trajectory   (Raw + Fitted)  18-Jan-2023")
+ax.set_xlim(left=50, right=250)
+ax.set_ylim(bottom=5, top=35)
 
+ax.grid("on")
 
 for fname1 in fnames:
     fname1 = fdir + fname1
