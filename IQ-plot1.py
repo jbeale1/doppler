@@ -6,12 +6,15 @@ Python3 code with scipy, numpy, matplotlib
 Based on FFT example at
 https://docs.scipy.org/doc/scipy/tutorial/fft.html
 
-J.Beale, Jan.18 2023
+J.Beale, Jan.23 2023
 """
 
 
 import sys         # command-line arguments
 import os
+import subprocess # run scp, sox
+import glob     # list of files in directory
+
 from scipy.fft import fft, fftfreq, fftshift
 from scipy.signal import cosine
 from scipy import interpolate  # spline fit
@@ -60,7 +63,7 @@ fpsPerMph = 1.46667  # convert mph to fps
 # --------------------------------------------------------
 
 # Calculate a spline fit to function y (units: mph) and graph it
-def doSpline(yraw,ax):
+def doSpline(yraw,ax,aTime):
     dirS = "going right"
     col="b" # blue
     if (np.average(yraw)<0):
@@ -70,7 +73,8 @@ def doSpline(yraw,ax):
     else:
         return  # don't plot cars going right
     yraw = np.abs(yraw)        # units are mph
-    y = np.concatenate([[yraw[0]*0.75],yraw])
+    y = np.concatenate([[yraw[0]*0.75],yraw]) # add a new first data point
+    yDiff = np.diff(y)
 
     #nPoints = 10  # how many points on low-point curve
 
@@ -97,8 +101,28 @@ def doSpline(yraw,ax):
     # ax.scatter(x,y,c=cols, s=1, label="raw data")
     #ax.plot(x, yfit, '-', c=col, label="spline fit")
     col = next(ax._get_lines.prop_cycler)['color']
-    ax.scatter(yDist, y, s=1, c=col)
-    ax.plot(yDist, yfit, '-', c=col)    
+    ax.scatter(yDist, y, s=1, c=col)  # raw data of mph vs ft travelled
+    ax.plot(yDist, yfit, '-', c=col)  # spline fit for mph vs ft travelled
+
+    # find max diff between (y - yfit) for all i>Ti where yDist[Ti] = 50 ft.
+    # find Vmax on d=(50..135), Vmax on d=(135-200), and Vmin in range d=70..200
+    iD1 = np.nonzero(yDist > 50)[0][0] # first index i where yDist[i] > 50
+    iD1a = np.nonzero(yDist > 70)[0][0]
+    iD2 = np.nonzero(yDist > 135)[0][0]
+    iD3 = np.nonzero(yDist > 200)[0][0]
+    print("ID1: %d,%d,%d,%d" % (iD1,iD1a,iD2,iD3))
+    maxyDif = np.abs(yDiff[iD1:iD3]).max()
+    maxDif = np.abs(y[iD1:iD3] - yfit[iD1:iD3]).max()
+    maxV1 = yfit[iD1:iD2].max()
+    maxV2 = yfit[iD2:iD3].max()
+    minV = yfit[iD1a:iD3].min()
+    minVi = np.argmin(yfit[iD1a:iD3]) + iD1a  # index of minimum speed
+    minVdist = yDist[minVi]  # distance travelled at time of min. speed
+    dV = (maxV1+maxV2)/2 - minV
+    print("#V, T,D,V1,V2,minV, %d, %5.2f, %5.2f, %5.2f, %5.2f, %5.2f, %4.1f" %
+          (aTime, maxyDif, maxDif, maxV1, maxV2, dV, minVdist))
+    f.write("#V, T,D,V1,V2,minV, %d, %5.2f, %5.2f, %5.2f, %5.2f, %5.2f, %4.1f\n" %
+          (aTime, maxyDif, maxDif, maxV1, maxV2, dV, minVdist))
     
     # plt.show() 
 
@@ -341,8 +365,8 @@ def doOneImage(fname_in, ax):
               mphMin = abs(mphMin)
               mDist = abs(mDist)
               #print(aTime)          
-              if (mphAvg > 12.0) and (mDist > 150) and (mDist < 280): # not slow, brief, or multiple
-                  doSpline(vMph,ax)
+              if (mphAvg > 12.0) and (mDist > 200): # not slow or too brief
+                  doSpline(vMph,ax,aTime)
               
               # add this event to dataframe
               df.loc[eCount] = [aTime, direction, mphMax, mphAvg, mphMin, 
@@ -375,88 +399,14 @@ def doOneImage(fname_in, ax):
     #cv2.waitKey(0)
     return (pMin0,pMax0,df)
 
-# ===================================================================    
-# Main program starts here  
-  
-showPlot = True  # show spectrogram graphs
-#savePlot = True
-#showPlot = False  # show spectrogram graphs
-savePlot = False
+# -------------------------------------------------------------------
 
-fdirOut = "./"
-#wdir="C:/Users/beale/Documents/Audio/"
-#fname_in = wdir + "DpD_2023-01-14_16-55-00.wav"
-#fname_in = wdir + "DpD_2023-01-14_12-35-00.wav"  
-#doOneImage(fname_in)
-
-"""
-n = len(sys.argv)
-if (n < 2):
-    print("%s Version 0.1" % sys.argv[0])
-    print("%s: Missing argument. Must supply a filename to work on." % sys.argv[0])
-    sys.exit()
-    
-fname1 = sys.argv[1]
-"""
-
-#fdir="C:/Users/beale/Documents/Audio/"
-fdir="/home/john/Audio/images/"
-#fname1 = "DpD_2023-01-14_16-55-00"  # 9 events
-#fname1 = "DpD_2023-01-14_12-35-00"  # 6 events
-#fname1 = "DpD_2023-01-02_11-05-00" # 11 events (reflector-knee?)
-#fname1 = "DpD_2023-01-03_03-45-00" # 0 (noise prob.)
-#fname1 = "DpD_2023-01-03_04-10-00"  # big signal, no events
-# fname1 = "DpD_2023-01-06_14-25-00" # 5 events, 3 odd; big peak
-#fname1 = "DpD_2023-01-16_17-14-59" # 6 ev: JPB 2 walk, 2 jog
-#fname1 = "DpD_2023-01-16_19-45-00"  # 7 events, JPB 2 walk, 2 jog
-#fname1 = "DpD_2023-01-16_20-45-00"  # 5 events, JPB 2 walk, 2 jog
-#fname1 = "DpD_2023-01-17_16-29-59" # 7 events
-#fnames = ["DpD_2023-01-17_15-30-00", # 7 events
-#          "DpD_2023-01-17_16-29-59", # 7 events
-#          "DpD_2023-01-14_16-55-00",  # 9 events
-#          "DpD_2023-01-14_12-35-00",  # 6 events
-#          ]
-"""
-"""
-
-fnames = [
-          "DpD_2023-01-10_17-15-00",
-          "DpD_2023-01-18_07-55-00",
-          "DpD_2023-01-18_08-30-00",
-          "DpD_2023-01-18_08-35-00",
-          "DpD_2023-01-18_08-40-00",
-          "DpD_2023-01-18_08-45-00",
-          "DpD_2023-01-18_09-10-00",
-          "DpD_2023-01-18_09-34-59",
-          "DpD_2023-01-18_12-10-00",
-          "DpD_2023-01-18_12-15-00",
-          "DpD_2023-01-18_12-35-00",
-          "DpD_2023-01-18_12-40-00",
-          "DpD_2023-01-18_14-15-00",
-          "DpD_2023-01-18_14-20-00",
-          "DpD_2023-01-18_17-09-59"
-        ]
-
-    
-#resultFile = "./DopplerD-Jan.csv"
-resultFile = "/home/john/Audio/images/DLog7.csv"
-
-plt.ion()
-fig, ax = plt.subplots()
-ax.set_xlabel("calculated distance (ft)")
-ax.set_ylabel("vehicle speed (mph)")
-ax.set_title("Vehicle Speed Trajectory   (Raw + Fitted)  18-Jan-2023")
-ax.set_xlim(left=50, right=250)
-ax.set_ylim(bottom=5, top=35)
-
-ax.grid("on")
-
-for fname1 in fnames:
-    fname1 = fdir + fname1
-    if ( fname1[-4:] != '.wav'):
-        fname1 += '.wav'
-    
-    with open(resultFile, 'a') as f:
+def doBatchWav(fnames, ax):
+    for fname1 in fnames:
+        #fname1 = fdir + fname1
+        if ( fname1[-4:] != '.wav'):
+            fname1 += '.wav'
+        
         # df = doOneImage(fname1) 
         
         (pMin0,pMax0,df) = doOneImage(fname1,ax) # returns Pandas DataFrame
@@ -482,6 +432,106 @@ for fname1 in fnames:
             fig.canvas.flush_events()
             #plt.show(block=False)
 
+# ===================================================================    
+# Main program starts here  
+  
+showPlot = True  # show spectrogram graphs
+#savePlot = True
+#showPlot = False  # show spectrogram graphs
+savePlot = False
+
+fdirOut = "./"
+
+"""
+n = len(sys.argv)
+if (n < 2):
+    print("%s Version 0.1" % sys.argv[0])
+    print("%s: Missing argument. Must supply a filename to work on." % sys.argv[0])
+    sys.exit()
+    
+fname1 = sys.argv[1]
+"""
+
+#fdir="C:/Users/beale/Documents/Audio/"
+fdir="/home/john/Audio/images/"
+
+fnames = [
+          "DpD_2023-01-10_17-15-00",
+          "DpD_2023-01-18_07-55-00",
+          "DpD_2023-01-18_08-30-00",
+          "DpD_2023-01-18_08-35-00",
+          "DpD_2023-01-18_08-40-00",
+          "DpD_2023-01-18_08-45-00",
+          "DpD_2023-01-18_09-10-00",
+          "DpD_2023-01-18_09-34-59",
+          "DpD_2023-01-18_12-10-00",
+          "DpD_2023-01-18_12-15-00",
+          "DpD_2023-01-18_12-35-00",
+          "DpD_2023-01-18_12-40-00",
+          "DpD_2023-01-18_14-15-00",
+          "DpD_2023-01-18_14-20-00",
+          "DpD_2023-01-18_17-09-59"
+        ]
+
+    
+#resultFile = "./DopplerD-Jan.csv"
+resultFile = "/home/john/Audio/images/DLog10.csv"
+
+gdir="/home/john/Audio/images/old/2023/"  # guide directory, list of .png files
+# path to remote host directory with .mp3 files
+rdir="john@john-Z83-4.local:/media/john/Seagate4GB/MINIX-John/Doppler1/old/"
+ldir="/dev/shm/"  # local working directory
+
+
+plt.ion()
+fig, ax = plt.subplots()
+ax.set_xlabel("calculated distance (ft)")
+ax.set_ylabel("vehicle speed (mph)")
+ax.set_title("Vehicle Speed Trajectory   (Raw + Fitted)  18-Jan-2023")
+ax.set_xlim(left=50, right=250)
+ax.set_ylim(bottom=5, top=35)
+ax.grid("on")
+
+# header for output CSV table
+cheader = "epoch, dir, max(mph), avg(mph), min(mph), std(px), area(px), "
+cheader += "length(ft), distance(ft), duration, kind"
+
+f = open(resultFile, 'w')
+dstring = time.strftime('%Y-%b-%d %H:%M:%S')
+f.write(cheader+"\n")  # start output file with column header line
+f.write("# Run at %s\n" % dstring)
+
+flist = glob.glob(gdir + "DpD_*.png")  # list of all known mp3 files
+flist.sort() # let's do them in ascending order
+
+print(len(flist))
+flist = flist[-1200:]
+print(len(flist))
+print(flist[0])
+print(flist[-1])
+
+#sys.exit()  # DEBUG stop here
+
+for fpath in flist:
+    fpath1 = os.path.splitext(fpath)[0]
+    froot = os.path.basename(fpath1) # base filename from full path
+    #print(froot)  # of form: "DpD_2023-01-11_14-05-00"
+
+    # froot = "DpD_2023-01-11_20-55-00"
+    fname_mp3 = froot + ".mp3"
+
+    rpath3 = rdir + fname_mp3
+    lpath3 = ldir + fname_mp3
+    lpathW = ldir + froot + ".wav"
+
+    subprocess.run(["scp", rpath3, lpath3]) # get the .mp3 from remote host
+    subprocess.run(["sox", lpath3, lpathW]) # convert it to .wav format
+
+    doBatchWav([lpathW], ax)  # process each .wav file in list fnames[]
+
+    subprocess.run(["rm", lpath3, lpathW]) # remove files from tmp folder when done
+    # sys.exit()
+
     
 if (showPlot):
             plt.ioff()
@@ -489,3 +539,5 @@ if (showPlot):
             plt.show()
 
 # ---------------------------------------------------------
+# rough plot: velocity max around 70 ft and 200 ft, minimum around 135 ft
+# based on 1200 files, DLog8.csv  20-Jan-2023
