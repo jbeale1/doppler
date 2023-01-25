@@ -6,7 +6,7 @@ Python3 code with scipy, numpy, matplotlib
 Based on FFT example at
 https://docs.scipy.org/doc/scipy/tutorial/fft.html
 
-J.Beale, Jan.23 2023
+J.Beale, Jan.24 2023
 """
 
 
@@ -177,7 +177,7 @@ def doOneImage(fname_in, ax):
     
     # convert matrix to OpenCV plot
     
-    fMask = 3
+    fMask = 15
     pMin0 = np.amin(p1)
     pMax0 = np.amax(p1)
     # pMax = np.maximum(5,pMax0) # don't autoscale noise up too high
@@ -213,7 +213,7 @@ def doOneImage(fname_in, ax):
     
     # print('Image Dimensions : ', img.shape) # (fbins 1200, timebins 6566)
     
-    Vsize = 7  # vertical motion blur length
+    Vsize = 5  # vertical motion blur length
     Hsize = 5  # horiz. motion blur
     kernel_motion_blur = np.zeros((Vsize, Vsize))
     kernel_Hmotion_blur = np.zeros((Hsize, Hsize))
@@ -226,7 +226,13 @@ def doOneImage(fname_in, ax):
     imgT = cv2.filter2D(img, -1, kernel_motion_blur)
     imgB = cv2.filter2D(imgT, -1, kernel_Hmotion_blur)
     
-    image = imgB # size = (1200, 6567)  (freq x time)
+    imgB2 = cv2.GaussianBlur(imgB,(3,3),0) # gaussian blur
+    
+    minThresh = 3 # threshold pixel level to force to zero
+    tType = 3 # 3=Threshold to Zero, clamp pixels darker than 3 to 0
+    _, image = cv2.threshold(imgB2, minThresh, 255, tType )
+    
+    #image = imgB # size = (1200, 6567)  (freq x time)
     
     # =====================================================
     
@@ -388,11 +394,12 @@ def doOneImage(fname_in, ax):
         fbase = os.path.basename(fname_in)
         if ( fbase[-4:] == '.wav'):  # remove the .wav extension
             fbase = fbase[:-4]
-        fname_out1= fdirOut + fbase + "_3.png"
-        fname_out2= fdirOut + fbase + "_mask.png"
+        fname_out1= fdirOut + fbase + ".png"
+        #fname_out1= fdirOut + fbase + ".jpg"  # jpeg saves space?
+        #fname_out2= fdirOut + fbase + "_mask.png"
         cv2.imwrite(fname_out1,image) # detected image
         #cv2.imwrite(fname_out1,imgOut) # detected image
-        cv2.imwrite(fname_out2,maskImg) # peaks mask
+        #cv2.imwrite(fname_out2,maskImg) # peaks mask
     
     
     #cv2.imshow("spectrogram", image)
@@ -436,11 +443,10 @@ def doBatchWav(fnames, ax):
 # Main program starts here  
   
 showPlot = True  # show spectrogram graphs
-#savePlot = True
+savePlot = True
 #showPlot = False  # show spectrogram graphs
-savePlot = False
+#savePlot = False
 
-fdirOut = "./"
 
 """
 n = len(sys.argv)
@@ -477,6 +483,8 @@ fnames = [
 #resultFile = "./DopplerD-Jan.csv"
 resultFile = "/home/john/Audio/images/DLog10.csv"
 
+fdirOut = "/home/john/Audio/images/doppler/outdir/" # save processed images
+
 gdir="/home/john/Audio/images/old/2023/"  # guide directory, list of .png files
 # path to remote host directory with .mp3 files
 rdir="john@john-Z83-4.local:/media/john/Seagate4GB/MINIX-John/Doppler1/old/"
@@ -505,12 +513,12 @@ flist = glob.glob(gdir + "DpD_*.png")  # list of all known mp3 files
 flist.sort() # let's do them in ascending order
 
 print(len(flist))
-flist = flist[-1200:]
-print(len(flist))
-print(flist[0])
-print(flist[-1])
+#flist = flist[-1200:] # only the most recent N files
+#print(len(flist))
+print("First and last files:")
+print("%s\n%s" % (flist[0],flist[-1]))
 
-#sys.exit()  # DEBUG stop here
+# sys.exit()  # DEBUG stop here
 
 for fpath in flist:
     fpath1 = os.path.splitext(fpath)[0]
@@ -541,3 +549,4 @@ if (showPlot):
 # ---------------------------------------------------------
 # rough plot: velocity max around 70 ft and 200 ft, minimum around 135 ft
 # based on 1200 files, DLog8.csv  20-Jan-2023
+
