@@ -6,7 +6,7 @@ Python3 code with scipy, numpy, matplotlib
 Based on FFT example at
 https://docs.scipy.org/doc/scipy/tutorial/fft.html
 
-J.Beale, Jan.24 2023
+J.Beale, Jan.26 2023
 """
 
 
@@ -98,12 +98,12 @@ def doSpline(yraw,ax,aTime):
     #yfps = y * fpsPerMph # raw data. units are feet per second
     yDist = np.cumsum(yfps * sliceDt)  # total feet travelled
 
-    # ax.scatter(x,y,c=cols, s=1, label="raw data")
-    #ax.plot(x, yfit, '-', c=col, label="spline fit")
+    """
     col = next(ax._get_lines.prop_cycler)['color']
     ax.scatter(yDist, y, s=1, c=col)  # raw data of mph vs ft travelled
     ax.plot(yDist, yfit, '-', c=col)  # spline fit for mph vs ft travelled
-
+    """
+    
     # find max diff between (y - yfit) for all i>Ti where yDist[Ti] = 50 ft.
     # find Vmax on d=(50..135), Vmax on d=(135-200), and Vmin in range d=70..200
     iD1 = np.nonzero(yDist > 50)[0][0] # first index i where yDist[i] > 50
@@ -460,26 +460,7 @@ fname1 = sys.argv[1]
 
 #fdir="C:/Users/beale/Documents/Audio/"
 fdir="/home/john/Audio/images/"
-
-fnames = [
-          "DpD_2023-01-10_17-15-00",
-          "DpD_2023-01-18_07-55-00",
-          "DpD_2023-01-18_08-30-00",
-          "DpD_2023-01-18_08-35-00",
-          "DpD_2023-01-18_08-40-00",
-          "DpD_2023-01-18_08-45-00",
-          "DpD_2023-01-18_09-10-00",
-          "DpD_2023-01-18_09-34-59",
-          "DpD_2023-01-18_12-10-00",
-          "DpD_2023-01-18_12-15-00",
-          "DpD_2023-01-18_12-35-00",
-          "DpD_2023-01-18_12-40-00",
-          "DpD_2023-01-18_14-15-00",
-          "DpD_2023-01-18_14-20-00",
-          "DpD_2023-01-18_17-09-59"
-        ]
-
-    
+   
 #resultFile = "./DopplerD-Jan.csv"
 resultFile = "/home/john/Audio/images/DLog10.csv"
 
@@ -491,14 +472,16 @@ rdir="john@john-Z83-4.local:/media/john/Seagate4GB/MINIX-John/Doppler1/old/"
 ldir="/dev/shm/"  # local working directory
 
 
-plt.ion()
+# plt.ion()
 fig, ax = plt.subplots()
+"""
 ax.set_xlabel("calculated distance (ft)")
 ax.set_ylabel("vehicle speed (mph)")
 ax.set_title("Vehicle Speed Trajectory   (Raw + Fitted)  18-Jan-2023")
 ax.set_xlim(left=50, right=250)
 ax.set_ylim(bottom=5, top=35)
 ax.grid("on")
+"""
 
 # header for output CSV table
 cheader = "epoch, dir, max(mph), avg(mph), min(mph), std(px), area(px), "
@@ -512,7 +495,12 @@ f.write("# Run at %s\n" % dstring)
 flist = glob.glob(gdir + "DpD_*.png")  # list of all known mp3 files
 flist.sort() # let's do them in ascending order
 
-print(len(flist))
+lastF = "/home/john/Audio/images/old/2023/DpD_2023-01-15_18-24-59.png"
+iStart = flist.index(lastF)
+print(len(flist), iStart)
+flist = flist[iStart:]  # truncate list to just this point
+
+print("New length: ",len(flist))
 #flist = flist[-1200:] # only the most recent N files
 #print(len(flist))
 print("First and last files:")
@@ -549,4 +537,3 @@ if (showPlot):
 # ---------------------------------------------------------
 # rough plot: velocity max around 70 ft and 200 ft, minimum around 135 ft
 # based on 1200 files, DLog8.csv  20-Jan-2023
-
