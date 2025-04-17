@@ -8,7 +8,7 @@ import time
 import datetime
 import os
 
-# port = "/dev/ttyUSB0"  # port connected to HLK-LK2451 sensor
+# port = "/dev/ttyUSB0"  # port connected to HLK-LD2451 sensor
 port = "COM11"
 logdir = r"C:\Users\beale\Documents\radar"
 
