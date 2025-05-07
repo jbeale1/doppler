@@ -29,3 +29,7 @@ Given that the green signal is from the left-pointing sensor, you can see below 
 If you have a sensor with both I/Q outputs (quadrature) you can directly detect the difference between motion toward and away from the sensor. This plot shows a spectrogram including negative frequencies, of the complex I/Q signal from a YH-24G01 24GHz module. This is me walking about 11 meters away and then back. I was careful to walk centered on-axis along the relatively tight antenna pattern of this module. The code which made this plot is "plotIQ.py" in this github directory.
 
 ![Walk-IQ](https://github.com/jbeale1/doppler/blob/master/IQ-Walk.jpg)
+
+The statistics of vehicle speeds over a day, on this particular road, is not well fitted to a single gaussian or normal distribution. There are a few cases at the high end around 70 km/h or 43 mph that are improbable outliers vs. the main population at 43 +/- 7 km/h  (or 27 mph +/- 4.4 mph).
+![Speed-Histogram](https://github.com/jbeale1/doppler/blob/master/Speed-pValues-5May2025-12bins.png)
+
