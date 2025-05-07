@@ -235,7 +235,7 @@ ax.annotate((hr_string + " ending " + lastDate[:-3]),
 plt.show()
 
 
-# 🔍 Final summary of most surprising bins
+# Final summary of most surprising bins
 print("\n%d bins : most surprising:" % bin_count)
 bin_stats_sorted = sorted(bin_stats, key=lambda x: x['p_value'])
 
