@@ -13,14 +13,15 @@ from filterpy.kalman import KalmanFilter
 # ==============================================================
 
 # input data file from radar
-in_dir = r"C:\Users\beale\Documents\doppler"
+#in_dir = r"C:\Users\beale\Documents\doppler"
+in_dir = "/home/john/Documents/doppler"
 
 #fname = r"20250504_202105_SerialLog.csv"
 #fname = r"20250505_212916_SerialLog.csv"
-fname = r"20250506_220329_SerialLog.csv"
+#fname = r"20250506_220329_SerialLog.csv"
 #fname = r"20250507_222129_SerialLog.csv"
 #fname = r"20250508_000003_SerialLog.csv"
-#fname = r"20250509_000003_SerialLog.csv"
+fname = r"20250509_000003_SerialLog.csv"
 
 # ==============================================================
 #  return indices where discrete difference is above threshold, or empty array
@@ -414,11 +415,19 @@ plt.show()
 
 
 # Final summary of most surprising bins
-print("\n%d bins : most surprising:" % bin_count)
+print()
 bin_stats_sorted = sorted(bin_stats, key=lambda x: x['p_value'])
 
-for stat in bin_stats_sorted:
-    if (stat['p_value'] > 0.01):
-        continue
-    print(f"Bin {stat['bin_range']}: Observed = {stat['observed']:3d}, "
-          f"Expected = {stat['expected']:5.2e}, p-value = {stat['p_value']:.4f}")
+leastP = bin_stats_sorted[0].get('p_value')
+
+if (leastP > 0.01):
+    print("No histogram bins are that surprising- distribution looks normal.")
+else:
+    print("Of %d bins, the most surprising:" % bin_count)
+
+    for stat in bin_stats_sorted:
+        if (stat['p_value'] > 0.01):
+            continue
+        print(f"Bin {stat['bin_range']}: Observed = {stat['observed']:3d}, "
+            f"Expected = {stat['expected']:5.2e}, p-value = {stat['p_value']:.4f}")
+        
