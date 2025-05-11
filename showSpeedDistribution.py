@@ -1,6 +1,7 @@
 # Analyze data from speed radar
 # Display vehicle & pedestrian stats
-# J.Beale 5/10/2025
+# Attempt to classify events (cars, people, rain)
+# J.Beale 5/11/2025
 
 import numpy as np
 import pandas as pd
@@ -10,7 +11,7 @@ from scipy.stats import norm, shapiro, probplot
 import time
 from scipy.ndimage import binary_dilation, label
 from filterpy.kalman import KalmanFilter
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from dataclasses import dataclass
@@ -142,33 +143,45 @@ def count_people(times, speeds, speed_threshold=1.5,
         elif category == "rain":
             rain.append(event_data)
 
-    if plot:
-
+    if plot:        
+        # Convert timestamps to datetime objects using system timezone
+        # Note: Python 3.9 fromtimestamp() uses local system timezone by default
+        dt_times = [datetime.fromtimestamp(t) for t in times]
+        
         # Plot all data
         plt.figure(figsize=(16, 6))
-        plt.scatter(times, speeds, color='green', s=10, label='Radar speed')
+        plt.scatter(dt_times, speeds, color='green', s=10, label='Radar speed')
         plt.ylim(-20, 20)
-        plt.xlabel("Unix Epoch Time (s)")
+        plt.xlabel("Time (PDT)")
         plt.ylabel("Speed (km/h)")
         
+        # Format x-axis for better time display
+        plt.gcf().autofmt_xdate()
+        plt.gca().xaxis.set_major_formatter(plt.matplotlib.dates.DateFormatter('%H:%M:%S'))
+        
         # Get the date for the title
-        PDT = ZoneInfo("America/Los_Angeles")
-        date_str = datetime.fromtimestamp(times[0], tz=PDT).strftime("%a %m/%d/%Y")        
+        date_str = dt_times[0].strftime("%a %m/%d/%Y")
         plt.title(f"Radar Speeds with Detected Events - {date_str}")
 
-
+        # Convert event timestamps with correct timezone
         for person in people:
             color = 'blue' if person['direction'] == 'towards' else 'red'
-            plt.axvspan(person['start_time'], person['end_time'], color=color, alpha=0.2,
-                        label=f"{person['direction'].capitalize()} (avg {person['avg_speed_kmh']} km/h)")
+            start_dt = datetime.fromtimestamp(person['start_time'])
+            end_dt = datetime.fromtimestamp(person['end_time'])
+            plt.axvspan(start_dt, end_dt, color=color, alpha=0.2,
+                      label=f"{person['direction'].capitalize()} (avg {person['avg_speed_kmh']} km/h)")
 
-
+        # Also fix car and rain event timestamps
         for car in slow_cars:
-            plt.axvspan(car['start_time'], car['end_time'], color='orange', alpha=0.2,
+            start_dt = datetime.fromtimestamp(car['start_time'])
+            end_dt = datetime.fromtimestamp(car['end_time'])
+            plt.axvspan(start_dt, end_dt, color='orange', alpha=0.2,
                         label=f"Car (avg {car['avg_speed_kmh']} km/h)")            
 
         for rain_event in rain:
-            plt.axvspan(rain_event['start_time'], rain_event['end_time'], 
+            start_dt = datetime.fromtimestamp(rain_event['start_time'])
+            end_dt = datetime.fromtimestamp(rain_event['end_time'])
+            plt.axvspan(start_dt, end_dt, 
                     color='yellow', alpha=0.2,
                     label=f"Rain (ratio={rain_event['zero_ratio']:.2f})")
             
@@ -219,7 +232,7 @@ def hour_count(event_times, label):
     peak_hour = np.argmax(hour_counts)
     peak_count = hour_counts[peak_hour]
     total = hour_counts.sum()
-    print("Peak traffic at hour %02d with %d %s (%.1f%% of total)" % 
+    print("Peak activity at hour %02d with %d %s (%.1f%% of total)" % 
           (peak_hour, peak_count, label, 100.0 * peak_count/total ))
 
     #print("Hours, traffic for %s" % date_string)
