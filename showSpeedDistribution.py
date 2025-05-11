@@ -13,6 +13,24 @@ from filterpy.kalman import KalmanFilter
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from dataclasses import dataclass
+from typing import List, NamedTuple
+import logging
+
+logging.basicConfig(level=logging.CRITICAL)
+logger = logging.getLogger(__name__)
+
+class SpeedEvent(NamedTuple):
+    start_time: float
+    start_index: int
+    end_index: int
+    dir: int
+    duration: float
+    max: float
+    avg: float
+    amax: float
+    amin: float
+
 # ==============================================================
 
 # input data file from radar
@@ -25,14 +43,16 @@ in_dir = r"C:\Users\beale\Documents\doppler"
 #fname = r"20250507_222129_SerialLog.csv" # 9 total
 #fname = r"20250508_000003_SerialLog.csv"
 #fname = r"20250509_000003_SerialLog.csv"
-fname = r"20250510_000003_SerialLog.csv"
+#fname = r"20250510_000003_SerialLog.csv"
+fname = r"20250511_000003_SerialLog.csv"
 
 # ==============================================================
 
 def count_people(times, speeds, speed_threshold=1.5, 
-                 max_abs_speed=20, min_group_size=150, time_gap=10, plot=True):
+                max_abs_speed=20, min_group_size=150, time_gap=10, 
+                zero_ratio_threshold=0.4, plot=True):
     """
-    Count people walking past radar, filtering each time group to retain only the dominant direction.
+    Count people and rain events from radar data.
     
     Parameters:
     - times: np.ndarray of shape (N,) with Unix timestamps
@@ -40,14 +60,18 @@ def count_people(times, speeds, speed_threshold=1.5,
     - speed_threshold: minimum absolute speed to consider valid movement (km/h)
     - max_abs_speed: maximum absolute speed for valid movement (km/h)
     - min_group_size: minimum number of points for a group to be valid
-    - time_gap: max gap (in seconds) to treat as same person
+    - time_gap: max gap (in seconds) to treat as same event
+    - zero_ratio_threshold: ratio of zero readings to classify as rain
     - plot: whether to generate a plot of the data
 
     Returns:
-    - people: list of dicts with direction and average speed
+    - slow_cars: list of dicts with car events
+    - people: list of dicts with pedestrian events
+    - rain: list of dicts with rain events
     """
-    # Valid points
-    valid_mask = (np.abs(speeds) > speed_threshold) & (np.abs(speeds) < max_abs_speed)
+        # Valid points
+    #valid_mask = (np.abs(speeds) > speed_threshold) & (np.abs(speeds) < max_abs_speed)
+    valid_mask = (np.abs(speeds) < max_abs_speed)
     valid_times = times[valid_mask]
     valid_speeds = speeds[valid_mask]
 
@@ -56,8 +80,11 @@ def count_people(times, speeds, speed_threshold=1.5,
     group_breaks = np.where(time_diffs > time_gap)[0] + 1
     group_indices = np.split(np.arange(len(valid_times)), group_breaks)
 
+
     people = []
     slow_cars = []
+    rain = []
+    
     for idx_group in group_indices:
         if len(idx_group) < min_group_size:
             continue
@@ -65,14 +92,19 @@ def count_people(times, speeds, speed_threshold=1.5,
         group_times = valid_times[idx_group]
         group_speeds = valid_speeds[idx_group]
 
+        # Calculate zero ratio for this group
+        zero_mask = np.abs(group_speeds) < 0.1  # Consider speeds near 0
+        zero_ratio = np.sum(zero_mask) / len(group_speeds)
+        print(f"Zero ratio: {zero_ratio:.2f} for group of size {len(group_speeds)}")
+
         # Determine dominant direction
         num_positive = np.sum(group_speeds > 0)
         num_negative = np.sum(group_speeds < 0)
         if num_positive >= num_negative:
-            dominant_mask = group_speeds > 0
+            dominant_mask = group_speeds >= 0
             direction = "towards"
         else:
-            dominant_mask = group_speeds < 0
+            dominant_mask = group_speeds <= 0
             direction = "away"
 
         dominant_times = group_times[dominant_mask]
@@ -80,59 +112,66 @@ def count_people(times, speeds, speed_threshold=1.5,
         accel = np.diff(dominant_speeds)
         jerk = np.diff(accel)
         jerkstd = np.std(jerk)
-        # accelstd = np.std(accel)
-
-        # jerkstd <= 0.3 is very likely a slow car
 
         avg_velocity = np.mean(dominant_speeds)  
-        max_speed = np.max(abs(dominant_speeds))
         max_speed_s = np.max(moving_avg(abs(dominant_speeds), 25))
-        as_round = round(abs(avg_velocity), 2)        
+        as_round = round(abs(avg_velocity), 2)       
 
-        cat = "unknown"  
-        if (max_speed_s > 17) or (jerkstd < 0.36):    
-            cat = "car"
+        # Determine category including rain
+        category = "unknown"
+        if zero_ratio >= zero_ratio_threshold:
+            category = "rain"
+        elif (max_speed_s > 17) or (jerkstd < 0.36):    
+            category = "car"
         elif (len(dominant_times) >= min_group_size) and (jerkstd >= 0.36):
-            cat = "person"
+            category = "person"
 
-        if cat == "person":
-            people.append({
-                "start_time": dominant_times[0],
-                "end_time": dominant_times[-1],
-                "direction": direction,
-                "avg_speed_kmh": as_round,
-                "jerk_std": round(jerkstd, 2)
-            })
-        if cat == "car":
-            slow_cars.append({
-                "start_time": dominant_times[0],
-                "end_time": dominant_times[-1],
-                "direction": direction,
-                "avg_speed_kmh": as_round,
-                "jerk_std": round(jerkstd, 2)
-            })
+        event_data = {
+            "start_time": dominant_times[0],
+            "end_time": dominant_times[-1],
+            "direction": direction,
+            "avg_speed_kmh": as_round,
+            "jerk_std": round(jerkstd, 2),
+            "zero_ratio": round(zero_ratio, 3)
+        }
 
-        #if (abs(avg_velocity) > 10):
-        #    plt.title("%s  js=%.3f v=%.1f" % (cat, jerkstd, max_speed_s))
-        #    plt.plot(dominant_speeds)
-        #    plt.show()
-
+        if category == "person":
+            people.append(event_data)
+        elif category == "car":
+            slow_cars.append(event_data)
+        elif category == "rain":
+            rain.append(event_data)
 
     if plot:
+
         # Plot all data
         plt.figure(figsize=(16, 6))
         plt.scatter(times, speeds, color='green', s=10, label='Radar speed')
         plt.ylim(-20, 20)
         plt.xlabel("Unix Epoch Time (s)")
         plt.ylabel("Speed (km/h)")
-        plt.title("Radar Speeds with Detected Walking Intervals")
+        
+        # Get the date for the title
+        PDT = ZoneInfo("America/Los_Angeles")
+        date_str = datetime.fromtimestamp(times[0], tz=PDT).strftime("%a %m/%d/%Y")        
+        plt.title(f"Radar Speeds with Detected Events - {date_str}")
 
-        # Overlay detected people
+
         for person in people:
             color = 'blue' if person['direction'] == 'towards' else 'red'
             plt.axvspan(person['start_time'], person['end_time'], color=color, alpha=0.2,
                         label=f"{person['direction'].capitalize()} (avg {person['avg_speed_kmh']} km/h)")
 
+
+        for car in slow_cars:
+            plt.axvspan(car['start_time'], car['end_time'], color='orange', alpha=0.2,
+                        label=f"Car (avg {car['avg_speed_kmh']} km/h)")            
+
+        for rain_event in rain:
+            plt.axvspan(rain_event['start_time'], rain_event['end_time'], 
+                    color='yellow', alpha=0.2,
+                    label=f"Rain (ratio={rain_event['zero_ratio']:.2f})")
+            
         # Remove duplicate legend entries
         handles, labels = plt.gca().get_legend_handles_labels()
         by_label = dict(zip(labels, handles))
@@ -140,15 +179,16 @@ def count_people(times, speeds, speed_threshold=1.5,
         plt.grid(True)
         plt.show()
 
-    return slow_cars, people
+    return slow_cars, people, rain
 
-def plot_hours(hour_counts, s):
+
+def plot_hours(hour_counts, s, label):
     # Plot using matplotlib
     plt.figure(figsize=(10, 5))
     plt.bar(range(24), hour_counts, color='skyblue', edgecolor='black')
     plt.xlabel("hour of day (PDT)")
-    plt.ylabel("vehicle count")
-    plt.title("Vehicles per Hour  %s" % s)
+    plt.ylabel("%s count" % label)
+    plt.title("%s per Hour  %s" % (label, s))
     plt.xticks(range(24))
     plt.grid(axis='y', linestyle='--', alpha=0.7)
 
@@ -165,7 +205,7 @@ def plot_hours(hour_counts, s):
     plt.show()
 
 # Extract hour-of-day (0–23) directly from datetime
-def hour_count(event_times):
+def hour_count(event_times, label):
     # Convert to datetime and extract hours
     PDT = ZoneInfo("America/Los_Angeles")
     hours = np.array([datetime.fromtimestamp(ts, tz=PDT).hour for ts in event_times])
@@ -175,12 +215,12 @@ def hour_count(event_times):
     dt = datetime.fromtimestamp(event_times[0], tz=PDT)    
     date_string = dt.strftime("%a %#m/%#d/%y")
 
-    plot_hours(hour_counts, date_string)
+    plot_hours(hour_counts, date_string, label)
     peak_hour = np.argmax(hour_counts)
     peak_count = hour_counts[peak_hour]
     total = hour_counts.sum()
-    print("Peak traffic at hour %02d with %d vehicles (%.1f%% of total)" % 
-          (peak_hour, peak_count, 100.0 * peak_count/total ))
+    print("Peak traffic at hour %02d with %d %s (%.1f%% of total)" % 
+          (peak_hour, peak_count, label, 100.0 * peak_count/total ))
 
     #print("Hours, traffic for %s" % date_string)
     #for i in range(24):
@@ -224,11 +264,12 @@ def clean_spikes(speed_kmh, a_max = 5):
     cleaned_speed_kmh = cleaned_speed_ms * 3.6
     return cleaned_speed_kmh
 
-def kalman_filter(data, dir, dt=0.09):
-    if (dir < 0): # going away from sensor, better to reverse time
-        speed_kmh = data[::-1]
+def kalman_filter(speeds: np.ndarray, direction: int, dt: float = 0.09) -> np.ndarray:
+    """Apply Kalman filtering to speed measurements."""
+    if (direction < 0): # going away from sensor, better to reverse time
+        speed_kmh = speeds[::-1]
     else:
-        speed_kmh = data        
+        speed_kmh = speeds        
     n = len(speed_kmh)
     speed_measurements = speed_kmh / 3.6  # convert to m/s
     
@@ -255,22 +296,23 @@ def kalman_filter(data, dir, dt=0.09):
         kf.update(z)
         filtered_speed.append(kf.x[1, 0])  # velocity component
 
-    if (dir < 0):
+    if (direction < 0):
         out = filtered_speed[::-1]
     else:
         out = filtered_speed
 
     return np.array(out) * 3.6  # back to km/h
 
-# find the largest segment without jumps larger than T
-def longest_stable_segment(arr, T):
-    arr = np.asarray(arr)
-    if len(arr) < 2:
-        return (0, len(arr))  # Edge case
+def find_stable_segment(speeds: np.ndarray, threshold: float) -> tuple[int, int]:
+    """Find the longest segment without speed jumps larger than threshold."""
 
-    diffs = np.abs(np.diff(arr))
-    breakpoints = np.where(diffs > T)[0]
-    segment_ends = np.concatenate(([ -1 ], breakpoints, [ len(arr) - 1 ]))
+    speeds = np.asarray(speeds)
+    if len(speeds) < 2:
+        return (0, len(speeds))  # Edge case
+
+    diffs = np.abs(np.diff(speeds))
+    breakpoints = np.where(diffs > threshold)[0]
+    segment_ends = np.concatenate(([ -1 ], breakpoints, [ len(speeds) - 1 ]))
     starts = segment_ends[:-1] + 1
     ends = segment_ends[1:] + 1
     lengths = ends - starts
@@ -287,90 +329,105 @@ def doPlotOne(times, speeds):
     plt.grid('both')
     plt.show(block=False)
 
-def find_groups_df(dfRaw, T, N):
-    kmh = dfRaw['kmh'].to_numpy()  # get just the speeds
-    epoch = dfRaw['epoch'].to_numpy()  # get just the epoch timestamp
-   
-    nkmh = np.abs(kmh)
-    mask = nkmh > T     # Boolean mask where condition is met
 
-    padded = np.pad(mask.astype(int), (1, 1), constant_values=0)
-    diff = np.diff(padded)
-    starts = np.where(diff == 1)[0]
-    ends = np.where(diff == -1)[0]
-    # print("Starts count: %d" % len(starts))
+def find_groups_df(
+        raw_data: pd.DataFrame,
+        speed_threshold: float = 20.0,
+        min_duration: float = 2.5
+        ) -> pd.DataFrame:
+    """
+    Find and analyze groups of speed measurements that represent vehicle passes.
 
-    #print("starts:", *starts[-2000:].astype(int))
+    Args:
+        raw_data: DataFrame with 'kmh' and 'epoch' columns
+        speed_threshold: Minimum speed to consider (km/h)
+        min_duration: Minimum duration of event (seconds)
 
-    #plt.ion()
-    #fig, ax = plt.subplots(figsize=(12, 6))
+    Returns:
+        DataFrame containing analyzed vehicle events with columns:
+        - start_time: Event start time (epoch seconds)
+        - start_index/end_index: Data indices
+        - direction: Movement direction (-1 or 1)
+        - duration: Event duration (seconds)
+        - max/avg: Maximum and average speeds
+        - amax/amin: Maximum and minimum accelerations
+    """
+    try:
+        speeds = raw_data['kmh'].to_numpy()
+        times = raw_data['epoch'].to_numpy()
+    except KeyError as e:
+        logger.error(f"Missing required column: {e}")
+        raise ValueError("Input DataFrame must have 'kmh' and 'epoch' columns")
 
-    # Collect group data
-    group_data = []
+    # Find continuous segments above threshold
+    speed_mask = np.abs(speeds) > speed_threshold
+    padded = np.pad(speed_mask.astype(int), (1, 1), constant_values=0)
+    transitions = np.diff(padded)
+    starts = np.where(transitions == 1)[0]
+    ends = np.where(transitions == -1)[0]
+
+    logger.info(f"Found {len(starts)} potential vehicle events")
+    events: List[SpeedEvent] = []
+
     for start, end in zip(starts, ends):
-        start_epoch = epoch[start]  # event start time in epoch seconds
-        end_epoch = epoch[end-1]
-        duration = end_epoch - start_epoch
-        if duration >= N:
-            group = kmh[start:end]
-            dStart,dEnd = longest_stable_segment(group, 5) # stability requirement
-            dStart += start
-            dEnd += start
-            #if (dStart != start) or (dEnd != end):
-            if False:                
-                print("%d,%d,%d,%d " % (start,end,dStart,dEnd),end="")            
-                input(" <enter>")
+        start_time = times[start]
+        end_time = times[end-1]
+        duration = end_time - start_time
 
-            start_epoch = epoch[dStart]  # event start time in epoch seconds
-            end_epoch = epoch[dEnd-1]
-            duration = end_epoch - start_epoch
-            if (duration) >= N:                                
-                groupA = kmh[dStart:dEnd] # reassign the group to avoid noise   
-                # cleaner = clean_spikes(groupA)      
-                dir = np.sign(np.mean(groupA)).astype(int)
-                smoothed = kalman_filter(groupA, dir)       
-                avg = moving_avg(smoothed, 7)
-                group = np.absolute(avg)
-                size = len(group)        
-                accelR = np.diff(group)/(3.6 * 0.09) # in m/s^2
-                accel = moving_avg(accelR,21)
-                if (dir > 0):
-                    accel = accel[0:int(size*.7)]
-                else:
-                    accel = accel[int(size*.3):]
-                # ax.clear()
-                accelMax = np.max(accel)
-                accelMin = np.min(accel)
-                #if (dir < 0) and (np.max(np.absolute(accel)) > 0.5):
-                #    ax.plot(accel)
-                #    ax.set_xticks(ticks=range(0, 200, 50))
-                #    #ax.set_yticks(ticks=range(20, 65, 10))
+        if duration < min_duration:
+            continue
 
+        # Find stable segment within group
+        group = speeds[start:end]
+        stable_start, stable_end = find_stable_segment(group, 5)
+        stable_start += start
+        stable_end += start
 
-                # doPlotOne(range(size), group)
-                max = group.max()
-                #if (max > 70):
-                #    print(start_epoch, max)
-                group_data.append({
-                    'start_time': start_epoch,
-                    'start_index': dStart,
-                    'end_index': dEnd,
-                    'dir': dir,
-                    'duration': duration,
-                    'max': max,
-                    'avg': group.mean(),
-                    'amax' : accelMax,
-                    'amin' : accelMin
-                })
-            #else:
-            #    print("Skip duration ",duration)
-            #plt.pause(0.01)
+        # Recompute timing for stable segment
+        start_time = times[stable_start]
+        end_time = times[stable_end-1]
+        duration = end_time - start_time
 
-    #plt.ioff()
-    #plt.show()
+        if duration < min_duration:
+            continue
 
-    print("Cars: %d" % len(group_data))    
-    return pd.DataFrame(group_data)
+        # Analyze stable segment
+        stable_speeds = speeds[stable_start:stable_end]
+        direction = int(np.sign(np.mean(stable_speeds)))
+        
+        # Apply filters and smoothing
+        filtered_speeds = kalman_filter(stable_speeds, direction)
+        smoothed = moving_avg(filtered_speeds, 7)
+        abs_speeds = np.abs(smoothed)
+
+        # Calculate acceleration
+        accel = np.diff(abs_speeds)/(3.6 * 0.09)  # Convert to m/s^2
+        accel_smooth = moving_avg(accel, 21)
+
+        # Trim acceleration data based on direction
+        size = len(abs_speeds)
+        if direction > 0:
+            accel_trim = accel_smooth[0:int(size*0.7)]
+        else:
+            accel_trim = accel_smooth[int(size*0.3):]
+
+        events.append(SpeedEvent(
+            start_time=start_time,
+            start_index=stable_start,
+            end_index=stable_end,
+            dir=direction,
+            duration=duration,
+            max=abs_speeds.max(),
+            avg=abs_speeds.mean(),
+            amax=accel_trim.max(),
+            amin=accel_trim.min()
+        ))
+
+    if not events:
+        logger.warning("No valid vehicle events found")
+        return pd.DataFrame()
+
+    return pd.DataFrame([event._asdict() for event in events])
 
 # display Q-Q plot
 def showQQ(dfg, dfg1, dfRaw):
@@ -449,6 +506,7 @@ def summarize_slow_events(events, label):
         return
 
     speeds = [p["avg_speed_kmh"] for p in events]
+    times =  [p["start_time"] for p in events]
     num_events = len(events)
     avg_speed = np.mean(speeds)
     min_speed = np.min(speeds)
@@ -456,6 +514,12 @@ def summarize_slow_events(events, label):
 
     print(f"%s: %d  Avg: %.2f km/h  Min/Max: %.2f / %.2f" % 
           (label, num_events, avg_speed, min_speed, max_speed))
+    
+    plt.hist(speeds) # display plots of speeds
+    plt.title("Histogram of speeds for %s" % label)
+    plt.show()
+
+    hour_count(times, label) # display plot by hour
 
 
 # ===============================================
@@ -483,9 +547,15 @@ fraction = np.mean(np.abs(speed_kmh) < T)
 #print("File: %s" % fname)
 print("Readings: %d  frac below %.1f: %.3f" % (len(dfRaw),T,fraction))
 
-slow_cars, people = count_people(epoch, speed_kmh, plot = False)
+#slow_cars, people = count_people(epoch, speed_kmh, plot = False)
+#slow_cars, people = count_people(epoch[4000:10000], speed_kmh[4000:10000], plot = True)
+slow_cars, people, rain = count_people(epoch, speed_kmh, 
+                                     zero_ratio_threshold=0.095,  # adjust this value
+                                     plot=True)
+
 summarize_slow_events(people, "People")
 summarize_slow_events(slow_cars, "Slow cars")
+summarize_slow_events(rain, "Rain events")
 
 #avg_speeds = np.array([p["avg_speed_kmh"] for p in people])
 #jerks = np.array([p["jerk_std"] for p in people])
@@ -520,7 +590,7 @@ outPath = os.path.join(in_dir, outname)
 dfg1.to_csv(outPath, index=False, float_format='%.2f')
 
 event_times = dfg1['start_time'].to_numpy() # array of all start time epochs
-hour_count(event_times)  # find how many each hour
+hour_count(event_times, "cars")  # find how many cars each hour
 
 # =======================
 # Enable interactive plot mode
