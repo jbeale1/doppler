@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="8.5in"
+   height="11in"
+   viewBox="0 0 850 1100"
+   version="1.1"
+   id="svg9"
+   sodipodi:docname="Car_marker2_2x.svg"
+   inkscape:version="1.4.2 (f4327f4, 2025-05-13)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs9" />
+  <sodipodi:namedview
+     id="namedview9"
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1.0"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="in"
+     inkscape:zoom="0.5"
+     inkscape:cx="409"
+     inkscape:cy="303"
+     inkscape:window-width="1920"
+     inkscape:window-height="1017"
+     inkscape:window-x="-8"
+     inkscape:window-y="-8"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg9" />
+  <rect
+     width="850"
+     height="1100"
+     fill="white"
+     id="rect1" />
+  <!-- left cell EMPTY (bit 0) -->
+  <!-- right cell FILLED (bit 1) -->
+  <g
+     id="g9"
+     transform="matrix(0,-2,2,0,-200,1682.4999)">
+    <rect
+       x="75"
+       y="175"
+       width="700"
+       height="700"
+       rx="8"
+       fill="#ffffff"
+       stroke="#000000"
+       stroke-width="28"
+       id="rect2" />
+    <circle
+       cx="225"
+       cy="390"
+       r="42"
+       fill="#000000"
+       id="circle2" />
+    <circle
+       cx="425"
+       cy="390"
+       r="42"
+       fill="#000000"
+       id="circle3" />
+    <circle
+       cx="625"
+       cy="390"
+       r="42"
+       fill="#000000"
+       id="circle4" />
+    <circle
+       cx="225"
+       cy="590"
+       r="42"
+       fill="#000000"
+       id="circle5" />
+    <circle
+       cx="425"
+       cy="590"
+       r="42"
+       fill="#000000"
+       id="circle6" />
+    <circle
+       cx="625"
+       cy="590"
+       r="42"
+       fill="#000000"
+       id="circle7" />
+    <rect
+       x="133"
+       y="730"
+       width="240"
+       height="90"
+       rx="6"
+       fill="#ffffff"
+       stroke="#000000"
+       stroke-width="6"
+       id="rect7" />
+    <rect
+       x="477"
+       y="730"
+       width="240"
+       height="90"
+       rx="6"
+       fill="#000000"
+       id="rect8" />
+  </g>
+</svg>
